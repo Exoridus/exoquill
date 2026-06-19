@@ -1,0 +1,7 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoQuill mark: dark rounded tile, green rounded-square outline + accent dot -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#16181b"/>
+  <rect x="300" y="300" width="424" height="424" rx="92" ry="92"
+        fill="none" stroke="#2fb877" stroke-width="48"/>
+  <rect x="356" y="356" width="150" height="150" rx="34" ry="34" fill="#2fb877"/>
+</svg>
