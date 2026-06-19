@@ -21,12 +21,26 @@ use std::time::{Duration, Instant};
 use exoquill_ai::stt::{SpeechToTextProvider, SttRequest};
 use exoquill_audio::{resample_to_16k, start_capture, Segmenter};
 use exoquill_core::CancelToken;
-use tauri::{AppHandle, Emitter, State};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::notes::AppState;
 
 /// How often the input level is pushed to the meter while capturing.
 const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Auto-stop the session after this long without any speech, so the user can
+/// pause to think mid-dictation without the recording ending immediately.
+const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A selectable dictation source: a microphone, or an output device captured via
+/// WASAPI loopback (`loopback = true`) to dictate from system audio.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureSource {
+    pub name: String,
+    pub loopback: bool,
+}
 
 /// A running dictation session. Dropping is not enough to stop it — set `stop`
 /// and join the worker (see [`stop_dictation`]).
@@ -42,6 +56,7 @@ pub fn start_dictation(
     app: AppHandle,
     device: Option<String>,
     language_mode: Option<String>,
+    loopback: Option<bool>,
 ) -> Result<(), String> {
     let mut slot = state.dictation.lock().map_err(|e| e.to_string())?;
     if slot.is_some() {
@@ -49,11 +64,12 @@ pub fn start_dictation(
     }
     let stt = Arc::clone(&state.stt);
     let language = language_mode.unwrap_or_else(|| "de_en_terms".into());
+    let loopback = loopback.unwrap_or(false);
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
 
     let handle = std::thread::spawn(move || {
-        run(app, stt, device, language, worker_stop);
+        run(app, stt, device, language, loopback, worker_stop);
     });
     *slot = Some(DictationController { stop, handle });
     Ok(())
@@ -70,10 +86,26 @@ pub fn stop_dictation(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// The microphones available for the dictation device picker.
+/// The available dictation sources: microphones plus output devices that can be
+/// captured via WASAPI loopback (to dictate from system audio).
 #[tauri::command]
-pub fn list_input_devices() -> Vec<String> {
-    exoquill_audio::list_input_devices()
+pub fn list_capture_sources() -> Vec<CaptureSource> {
+    let mut sources: Vec<CaptureSource> = exoquill_audio::list_input_devices()
+        .into_iter()
+        .map(|name| CaptureSource {
+            name,
+            loopback: false,
+        })
+        .collect();
+    sources.extend(
+        exoquill_audio::list_output_devices()
+            .into_iter()
+            .map(|name| CaptureSource {
+                name,
+                loopback: true,
+            }),
+    );
+    sources
 }
 
 /// Worker loop: capture → segment → transcribe → emit. Runs on its own thread
@@ -83,12 +115,14 @@ fn run(
     stt: Arc<dyn SpeechToTextProvider>,
     device: Option<String>,
     language: String,
+    loopback: bool,
     stop: Arc<AtomicBool>,
 ) {
-    let capture = match start_capture(device.as_deref()) {
+    let capture = match start_capture(device.as_deref(), loopback) {
         Ok(capture) => capture,
         Err(error) => {
             let _ = app.emit("dictation_error", error);
+            clear_session(&app);
             let _ = app.emit("dictation_stopped", ());
             return;
         }
@@ -99,12 +133,16 @@ fn run(
     let mut segmenter = Segmenter::new(rate);
     let cancel = CancelToken::new();
     let mut last_level = Instant::now();
+    let mut last_voice = Instant::now();
 
     while !stop.load(Ordering::Relaxed) {
         match capture.frames.recv_timeout(LEVEL_INTERVAL) {
             Ok(frame) => {
                 if let Some(utterance) = segmenter.push(&frame) {
                     transcribe(&app, &stt, &language, rate, utterance, &cancel);
+                }
+                if segmenter.is_active() {
+                    last_voice = Instant::now();
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -114,13 +152,30 @@ fn run(
             let _ = app.emit("dictation_level", (segmenter.level() * 4.0).min(1.0));
             last_level = Instant::now();
         }
+        // Auto-stop after a long silence so a thinking pause doesn't end the
+        // session, but an abandoned one doesn't capture forever.
+        if last_voice.elapsed() >= INACTIVITY_TIMEOUT {
+            break;
+        }
     }
 
     if let Some(utterance) = segmenter.flush() {
         transcribe(&app, &stt, &language, rate, utterance, &cancel);
     }
     drop(capture);
+    clear_session(&app);
     let _ = app.emit("dictation_stopped", ());
+}
+
+/// Clear the session slot when the worker exits on its own (inactivity timeout
+/// or device disconnect), so the next `start_dictation` isn't a no-op. The
+/// explicit `stop_dictation` path takes the slot first, so this then finds none.
+fn clear_session(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut slot) = state.dictation.lock() {
+            let _ = slot.take();
+        }
+    }
 }
 
 /// Resample one utterance to 16 kHz, transcribe it and emit the text (or error).

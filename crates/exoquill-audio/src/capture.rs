@@ -20,25 +20,47 @@ pub struct Capture {
     pub frames: Receiver<Vec<f32>>,
 }
 
-/// Start capturing from `device_name` (matched by name) or the default input
-/// device when `None`. The returned [`Capture`] must be kept alive and is owned
-/// by the worker thread that created it.
-pub fn start_capture(device_name: Option<&str>) -> Result<Capture, String> {
+/// Start capturing from `device_name` (matched by name) or the default device
+/// when `None`. With `loopback`, the source is a *render* (output) device and
+/// cpal captures the system audio playing on it (WASAPI loopback); otherwise it
+/// is a microphone. The returned [`Capture`] must be kept alive and is owned by
+/// the worker thread that created it.
+pub fn start_capture(device_name: Option<&str>, loopback: bool) -> Result<Capture, String> {
     let host = cpal::default_host();
-    let device = match device_name {
-        Some(name) => host
-            .input_devices()
-            .map_err(|e| format!("enumerate input devices: {e}"))?
-            .find(|d| device_label(d).as_deref() == Some(name))
-            .ok_or_else(|| format!("input device not found: {name}"))?,
-        None => host
-            .default_input_device()
-            .ok_or_else(|| "no default input device".to_string())?,
+    let (device, config) = if loopback {
+        // Building an input stream on an output device transparently enables
+        // WASAPI loopback (system-audio capture); its config is the render mix.
+        let device = match device_name {
+            Some(name) => host
+                .output_devices()
+                .map_err(|e| format!("enumerate output devices: {e}"))?
+                .find(|d| device_label(d).as_deref() == Some(name))
+                .ok_or_else(|| format!("output device not found: {name}"))?,
+            None => host
+                .default_output_device()
+                .ok_or_else(|| "no default output device".to_string())?,
+        };
+        let config = device
+            .default_output_config()
+            .map_err(|e| format!("default output config: {e}"))?;
+        (device, config)
+    } else {
+        let device = match device_name {
+            Some(name) => host
+                .input_devices()
+                .map_err(|e| format!("enumerate input devices: {e}"))?
+                .find(|d| device_label(d).as_deref() == Some(name))
+                .ok_or_else(|| format!("input device not found: {name}"))?,
+            None => host
+                .default_input_device()
+                .ok_or_else(|| "no default input device".to_string())?,
+        };
+        let config = device
+            .default_input_config()
+            .map_err(|e| format!("default input config: {e}"))?;
+        (device, config)
     };
 
-    let config = device
-        .default_input_config()
-        .map_err(|e| format!("default input config: {e}"))?;
     let sample_rate = config.sample_rate();
     let channels = config.channels().max(1);
     let sample_format = config.sample_format();

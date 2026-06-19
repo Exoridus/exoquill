@@ -43,6 +43,12 @@ export interface TtsResponse {
   sampleRate: number;
 }
 
+/** A dictation source: a microphone, or an output device captured via loopback. */
+export interface CaptureSource {
+  name: string;
+  loopback: boolean;
+}
+
 // Backend event bus payloads (tagged by `type`); see exoquill-core::events.
 export type BackendEvent =
   | { type: "job_updated"; job: Job }

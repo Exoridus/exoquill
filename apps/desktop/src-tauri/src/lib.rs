@@ -187,7 +187,7 @@ pub fn run() {
             jobs::tts_speak,
             dictation::start_dictation,
             dictation::stop_dictation,
-            dictation::list_input_devices,
+            dictation::list_capture_sources,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

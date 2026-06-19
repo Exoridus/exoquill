@@ -77,6 +77,12 @@ impl Segmenter {
         self.last_level
     }
 
+    /// Whether a speech run is currently in progress. Drives the dictation
+    /// inactivity timeout (a long pause with no speech ends the session).
+    pub fn is_active(&self) -> bool {
+        self.speaking
+    }
+
     /// Feed one captured buffer. Returns a finalized utterance (mono samples at
     /// the capture rate) when a speech run just ended, otherwise `None`.
     pub fn push(&mut self, frame: &[f32]) -> Option<Vec<f32>> {

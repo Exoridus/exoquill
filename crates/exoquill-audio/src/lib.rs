@@ -98,6 +98,19 @@ pub fn default_input_device_name() -> Option<String> {
         .and_then(|device| device_name(&device))
 }
 
+/// Returns the names of the available audio *output* devices.
+///
+/// These double as dictation sources via WASAPI loopback (capturing the system
+/// audio playing on them — see [`start_capture`]). Like [`list_input_devices`]
+/// it is robust on headless machines and returns an empty [`Vec`] on failure.
+pub fn list_output_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    match host.output_devices() {
+        Ok(devices) => devices.filter_map(|device| device_name(&device)).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Resolves a human-readable name for a cpal [`Device`](cpal::Device).
 ///
 /// In cpal 0.18 a device's name lives in its structured

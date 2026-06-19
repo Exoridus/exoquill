@@ -13,7 +13,7 @@ import * as api from "./lib/api";
 import { playSamples, stopPlayback } from "./lib/audio";
 import { startDictation, stopDictation, subscribeDictation } from "./lib/dictation";
 import { speak, stopSpeaking } from "./lib/speech";
-import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
+import type { BackendEvent, CaptureSource, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
 
 function sortNotes(notes: Note[]): Note[] {
@@ -40,6 +40,9 @@ export default function App() {
   const [dictating, setDictating] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [dictationError, setDictationError] = useState<string | null>(null);
+  const [sources, setSources] = useState<CaptureSource[]>([]);
+  // The chosen dictation source; `null` is the system default microphone.
+  const [source, setSource] = useState<CaptureSource | null>(null);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
@@ -223,7 +226,7 @@ export default function App() {
           setActiveId(note.id);
           language = note.languageMode;
         }
-        await startDictation(undefined, language);
+        await startDictation(source?.name, language, source?.loopback ?? false);
       }
     } catch (err) {
       setDictationError(String(err));
@@ -231,7 +234,12 @@ export default function App() {
     } finally {
       dictationBusy.current = false;
     }
-  }, [dictating, activeId, activeNote]);
+  }, [dictating, activeId, activeNote, source]);
+
+  // Load the available dictation sources (mics + loopback) once.
+  useEffect(() => {
+    void api.listCaptureSources().then(setSources).catch(() => setSources([]));
+  }, []);
 
   // Subscribe once to the backend's live dictation events: insert each
   // transcript chunk at the cursor, drive the level meter, surface errors, and
@@ -324,6 +332,26 @@ export default function App() {
                 formatting={formatting}
                 reading={reading}
               />
+              {!dictating && sources.length > 0 && (
+                <div className="dictation-source">
+                  <span className="dictation-source__label">Diktat-Quelle</span>
+                  <select
+                    className="dictation-source__select"
+                    value={source ? String(sources.indexOf(source)) : ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSource(v === "" ? null : sources[Number(v)] ?? null);
+                    }}
+                  >
+                    <option value="">Standard-Mikrofon</option>
+                    {sources.map((s, i) => (
+                      <option key={`${s.loopback ? "out" : "in"}:${s.name}`} value={String(i)}>
+                        {(s.loopback ? "🔊 " : "🎙 ") + s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {dictating && (
                 <div className="dictation-bar" role="status" aria-live="polite">
                   <span className="dictation-bar__dot" />

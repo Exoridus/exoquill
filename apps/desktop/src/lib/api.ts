@@ -1,7 +1,7 @@
 // Typed wrappers around the Tauri notes commands (see src-tauri/src/notes.rs).
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Job, Note, NoteSource, NoteUpdate, TtsResponse } from "./types";
+import type { CaptureSource, Job, Note, NoteSource, NoteUpdate, TtsResponse } from "./types";
 
 export function listNotes(): Promise<Note[]> {
   return invoke<Note[]>("list_notes");
@@ -55,11 +55,17 @@ export function formatText(text: string, instruction?: string): Promise<string> 
 }
 
 /** Start live dictation into the active note. Capture + transcription run in
- *  the backend, which streams `dictation_*` events (see lib/dictation.ts). */
-export function startDictation(device?: string, languageMode?: string): Promise<void> {
+ *  the backend, which streams `dictation_*` events (see lib/dictation.ts).
+ *  `loopback` captures system audio from an output device instead of a mic. */
+export function startDictation(
+  device?: string,
+  languageMode?: string,
+  loopback = false,
+): Promise<void> {
   return invoke("start_dictation", {
     device: device ?? null,
     languageMode: languageMode ?? null,
+    loopback,
   });
 }
 
@@ -68,9 +74,9 @@ export function stopDictation(): Promise<void> {
   return invoke("stop_dictation");
 }
 
-/** The microphones available for the dictation device picker. */
-export function listInputDevices(): Promise<string[]> {
-  return invoke<string[]>("list_input_devices");
+/** The dictation sources: microphones plus output devices (WASAPI loopback). */
+export function listCaptureSources(): Promise<CaptureSource[]> {
+  return invoke<CaptureSource[]>("list_capture_sources");
 }
 
 /** Synthesize speech via the local TTS provider; rejects if none is available. */
