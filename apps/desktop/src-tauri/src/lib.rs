@@ -9,7 +9,7 @@ use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::mock::{MockFormatter, MockOcr};
 use exoquill_ai::ocr::OcrProvider;
 use exoquill_ai::provider::{Health, Provider};
-use exoquill_ai::TesseractOcr;
+use exoquill_ai::{LlamaFormatter, TesseractOcr};
 use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
@@ -40,6 +40,38 @@ fn resolve_ocr_provider(app: &App) -> Arc<dyn OcrProvider> {
     }
 }
 
+/// Pick the formatter provider: real llama.cpp + Qwen when reachable, else mock.
+fn resolve_formatter_provider(app: &App) -> Arc<dyn FormatterProvider> {
+    let resources = app.path().resource_dir().ok();
+    let binary = std::env::var("EXOQUILL_LLAMA")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("llama/llama-completion.exe"))
+        });
+    let model = std::env::var("EXOQUILL_FORMATTER_MODEL")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("models/qwen2.5-1.5b-instruct-q4_k_m.gguf"))
+        });
+    match (binary, model) {
+        (Some(binary), Some(model)) => {
+            let llama = LlamaFormatter::new(binary, model);
+            if matches!(llama.health_check(), Health::Ready) {
+                Arc::new(llama)
+            } else {
+                Arc::new(MockFormatter)
+            }
+        }
+        _ => Arc::new(MockFormatter),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -65,10 +97,11 @@ pub fn run() {
             let jobs = JobQueue::new(sink);
 
             let ocr = resolve_ocr_provider(app);
+            let formatter = resolve_formatter_provider(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
-                formatter: Arc::new(MockFormatter) as Arc<dyn FormatterProvider>,
+                formatter,
                 ocr,
             });
 

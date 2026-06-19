@@ -6,6 +6,7 @@
 //! off the UI thread; heavy runtimes run as isolated processes (decisions D8).
 
 pub mod formatter;
+pub mod llama;
 pub mod mock;
 pub mod ocr;
 pub mod provider;
@@ -14,6 +15,7 @@ pub mod tesseract;
 pub mod tts;
 pub mod vad;
 
+pub use llama::LlamaFormatter;
 pub use tesseract::TesseractOcr;
 
 pub use provider::{
