@@ -1,0 +1,10 @@
+[package]
+name = "exoquill-capture"
+description = "Image capture for ExoQuill OCR: files, drag-and-drop, clipboard."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]

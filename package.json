@@ -1,0 +1,14 @@
+{
+  "name": "exoquill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first desktop app for dictation, OCR, formatting and read-aloud.",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "dev": "pnpm --filter @exoquill/desktop tauri dev",
+    "build": "pnpm --filter @exoquill/desktop tauri build",
+    "tauri": "pnpm --filter @exoquill/desktop tauri",
+    "fe:build": "pnpm --filter @exoquill/desktop build",
+    "typecheck": "pnpm --filter @exoquill/desktop exec tsc --noEmit"
+  }
+}

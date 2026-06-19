@@ -1,0 +1,21 @@
+# Cargo workspace root for ExoQuill.
+# The Tauri app lives in apps/desktop/src-tauri; shared logic in crates/*.
+[workspace]
+resolver = "2"
+members = [
+    "apps/desktop/src-tauri",
+    "crates/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+authors = ["ExoQuill contributors"]
+repository = "https://github.com/Exoridus/exoquill"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
