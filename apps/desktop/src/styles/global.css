@@ -1,0 +1,124 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--selection-bg);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input {
+  font-family: inherit;
+}
+
+/* Thin, calm scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* TipTap editor surface */
+.ProseMirror {
+  outline: none;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.ProseMirror > * + * {
+  margin-top: 0.7em;
+}
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.2em;
+}
+.ProseMirror h1 {
+  font-size: 1.6em;
+}
+.ProseMirror h2 {
+  font-size: 1.3em;
+}
+.ProseMirror h3 {
+  font-size: 1.1em;
+}
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.4em;
+}
+.ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+.ProseMirror pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8em 1em;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  background: none;
+  color: var(--text);
+  padding: 0;
+}
+.ProseMirror blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 1em;
+  color: var(--text-secondary);
+}
+.ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+/* Placeholder for an empty editor */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

@@ -1,0 +1,78 @@
+/* ExoQuill design tokens — Direction B "Local AI Utility" (the green one).
+   Source: .workspace/design-exploration/ */
+
+:root {
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-sm: 4px;
+  --radius: 5px;
+  --radius-lg: 8px;
+
+  /* Light theme (default) */
+  --bg: #ffffff;
+  --bg-sidebar: #f4f5f6;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #e3e6e9;
+  --border-strong: #d7dbdf;
+
+  --accent: #1f9d62;
+  --accent-hover: #1a8a56;
+  --accent-contrast: #ffffff;
+  --accent-soft-bg: #e1f1e8;
+  --accent-soft-text: #157a4b;
+
+  --active-note-bg: #ffffff;
+  --active-note-border: #d6e7dd;
+
+  --ink: #16181b;
+  --text: #33383e;
+  --text-secondary: #5b6168;
+  --text-muted: #9aa0a6;
+  --text-faint: #aeb3b8;
+
+  --primary-btn-bg: #16181b;
+  --primary-btn-text: #ffffff;
+
+  --selection-bg: #cfe9dc;
+
+  /* The floating selection toolbar is dark in both themes. */
+  --toolbar-bg: #16181b;
+  --toolbar-text: #c3c8cd;
+  --toolbar-divider: #2c3036;
+
+  --shadow-window: 0 10px 30px rgba(20, 30, 40, 0.13);
+  --shadow-pop: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] {
+  --bg: #0f1113;
+  --bg-sidebar: #121417;
+  --surface: #16181b;
+  --surface-raised: #1b1e22;
+  --border: #262a2e;
+  --border-strong: #2c3036;
+
+  --accent: #2fb877;
+  --accent-hover: #3fd089;
+  --accent-contrast: #0f1113;
+  --accent-soft-bg: #16352a;
+  --accent-soft-text: #3fd089;
+
+  --active-note-bg: #1b1e22;
+  --active-note-border: #2fb877;
+
+  --ink: #e6e9ec;
+  --text: #b3b9bf;
+  --text-secondary: #9aa0a6;
+  --text-muted: #6b7177;
+  --text-faint: #6b7177;
+
+  --primary-btn-bg: #2fb877;
+  --primary-btn-text: #0f1113;
+
+  --selection-bg: #16352a;
+
+  --shadow-window: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
