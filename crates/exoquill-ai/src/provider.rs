@@ -1,15 +1,18 @@
-//! Common provider metadata, health and cancellation primitives.
+//! Common provider metadata and health primitives.
 //!
 //! Every AI feature (STT, OCR, formatting, TTS, VAD) is exposed through a
 //! provider that implements [`Provider`] plus its feature-specific trait. Runs
-//! are synchronous and cooperatively cancellable; the job queue executes them
-//! off the UI thread and heavy runtimes run as isolated processes (decisions D8).
+//! are synchronous and cooperatively cancellable via [`CancelToken`]; the job
+//! queue executes them off the UI thread and heavy runtimes run as isolated
+//! processes (decisions D8).
 
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+// The cancellation primitive lives in core so the job queue and providers share
+// one type. Re-exported here for ergonomic `crate::provider::CancelToken` use.
+pub use exoquill_core::CancelToken;
 
 /// A capability a provider advertises to the UI and scheduler.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,27 +45,6 @@ pub enum Health {
     Ready,
     MissingModel { model_id: String },
     Unavailable { reason: String },
-}
-
-/// Cooperative cancellation handle passed into a provider run. Cloning shares
-/// the same flag, so the scheduler can cancel a run from another thread.
-#[derive(Debug, Clone, Default)]
-pub struct CancelToken(Arc<AtomicBool>);
-
-impl CancelToken {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Request cancellation. Idempotent.
-    pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
-    }
-
-    /// Whether cancellation has been requested.
-    pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
-    }
 }
 
 /// Errors a provider run can produce.
@@ -109,15 +91,6 @@ pub trait Provider: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cancel_token_is_shared_across_clones() {
-        let token = CancelToken::new();
-        let clone = token.clone();
-        assert!(!clone.is_cancelled());
-        token.cancel();
-        assert!(clone.is_cancelled());
-    }
 
     #[test]
     fn provider_error_displays() {

@@ -1,11 +1,17 @@
 //! Core domain logic for ExoQuill.
 //!
-//! Hosts the note model and title generation today; the job queue and event bus
-//! land in PR 2 (see `docs/roadmap.md`). Persistence lives in `exoquill-db`.
+//! Hosts the note model, title generation, cancellation, the event bus and the
+//! job queue. Persistence lives in `exoquill-db`; AI providers in `exoquill-ai`.
 
+pub mod cancel;
 pub mod clock;
+pub mod events;
+pub mod jobs;
 pub mod note;
 
+pub use cancel::CancelToken;
+pub use events::{Event, EventSink};
+pub use jobs::{Job, JobHandle, JobId, JobQueue, JobStatus, JobTask};
 pub use note::{
     generate_title, new_note_id, NewNote, Note, NoteSource, NoteUpdate, DEFAULT_LANGUAGE_MODE,
 };
