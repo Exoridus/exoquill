@@ -183,6 +183,7 @@ pub fn run() {
             jobs::cancel_job,
             jobs::list_jobs,
             jobs::run_ocr,
+            jobs::ocr_image,
             jobs::format_text,
             jobs::tts_speak,
             dictation::start_dictation,

@@ -381,3 +381,104 @@
   font-family: var(--font-mono);
   font-size: 11px;
 }
+
+/* ---- OCR result overlay ---- */
+.ocr-busy {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  z-index: 60;
+}
+.ocr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.ocr-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  max-width: min(1000px, 92vw);
+  max-height: 90vh;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+}
+.ocr-overlay__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ocr-overlay__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.ocr-overlay__spacer {
+  flex: 1;
+}
+.ocr-overlay__hint {
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.ocr-overlay__stage {
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg-sidebar);
+}
+.ocr-overlay__image-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.ocr-overlay__image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+}
+.ocr-overlay__layer {
+  position: absolute;
+  inset: 0;
+  cursor: text;
+}
+.ocr-overlay__word {
+  position: absolute;
+  color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1;
+  user-select: text;
+}
+.ocr-overlay__word::selection {
+  background: rgba(47, 184, 119, 0.45);
+  color: transparent;
+}
+.ocr-overlay__plain {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  user-select: text;
+}

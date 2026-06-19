@@ -1,7 +1,15 @@
 // Typed wrappers around the Tauri notes commands (see src-tauri/src/notes.rs).
 import { invoke } from "@tauri-apps/api/core";
 
-import type { CaptureSource, Job, Note, NoteSource, NoteUpdate, TtsResponse } from "./types";
+import type {
+  CaptureSource,
+  Job,
+  Note,
+  NoteSource,
+  NoteUpdate,
+  OcrLayout,
+  TtsResponse,
+} from "./types";
 
 export function listNotes(): Promise<Note[]> {
   return invoke<Note[]>("list_notes");
@@ -47,6 +55,12 @@ export function listJobs(): Promise<Job[]> {
 /** OCR an image (raw bytes) and append the text to the note, as a job. */
 export function runOcr(noteId: string, imageBytes: number[]): Promise<string> {
   return invoke<string>("run_ocr", { noteId, imageBytes });
+}
+
+/** OCR an image into a structured layout (text + selectable word boxes) for the
+ *  overlay. Does not touch any note; the UI decides what to insert. */
+export function ocrImage(imageBytes: number[]): Promise<OcrLayout> {
+  return invoke<OcrLayout>("ocr_image", { imageBytes });
 }
 
 /** Format a short snippet synchronously and return the result. */

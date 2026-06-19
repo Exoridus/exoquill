@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use exoquill_ai::formatter::FormatRequest;
-use exoquill_ai::ocr::OcrRequest;
+use exoquill_ai::ocr::{OcrLayout, OcrRequest};
 use exoquill_ai::tts::{TtsRequest, TtsResponse};
 use exoquill_core::note::NoteUpdate;
 use exoquill_core::{CancelToken, Event, EventSink, Job};
@@ -140,6 +140,22 @@ pub fn run_ocr(
         }),
     );
     Ok(job_id)
+}
+
+/// Recognize an image with word bounding boxes + layout-preserving text, for
+/// the selectable OCR overlay. Synchronous and does not touch any note — the UI
+/// decides what to insert. Returns boxes only with the real Tesseract provider;
+/// the mock returns text alone.
+#[tauri::command]
+pub fn ocr_image(state: State<AppState>, image_bytes: Vec<u8>) -> Result<OcrLayout, String> {
+    let request = OcrRequest {
+        image_bytes,
+        languages: "deu+eng".into(),
+    };
+    state
+        .ocr
+        .run_layout(request, &CancelToken::new())
+        .map_err(|e| e.to_string())
 }
 
 /// Format a short snippet (e.g. an editor selection) and return the result

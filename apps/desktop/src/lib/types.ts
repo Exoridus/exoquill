@@ -49,6 +49,25 @@ export interface CaptureSource {
   loopback: boolean;
 }
 
+/** One OCR word with its bounding box in the recognized image's pixel space. */
+export interface OcrWord {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+}
+
+/** Structured OCR result: layout-preserving text + word boxes for the overlay.
+ *  `width`/`height` are the pixel space the boxes live in (0 with the mock). */
+export interface OcrLayout {
+  text: string;
+  words: OcrWord[];
+  width: number;
+  height: number;
+}
+
 // Backend event bus payloads (tagged by `type`); see exoquill-core::events.
 export type BackendEvent =
   | { type: "job_updated"; job: Job }
