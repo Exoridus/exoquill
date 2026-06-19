@@ -8,3 +8,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+chrono = "0.4.45"
+serde = { version = "1.0.228", features = ["derive"] }
+uuid = { version = "1.23.3", features = ["v4"] }
