@@ -8,3 +8,13 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+cpal = "0.18.1"
+
+# cpal 0.18.1 declares `windows = ">=0.61, <=0.62"` and `windows-core =
+# ">=0.61, <=0.62"` as separate dependencies. Left unconstrained, Cargo
+# resolves `windows` to 0.61.x (which re-exports windows-core 0.61) while
+# resolving the standalone `windows-core` to 0.62, which puts two
+# incompatible `windows-core` versions in the graph and breaks cpal's WASAPI
+# backend. Pinning windows-core to 0.61.2 unifies them. Windows-only.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-core = { version = "=0.61.2", default-features = false }
