@@ -8,5 +8,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+exoquill-capture = { version = "0.1.0", path = "../exoquill-capture" }
 exoquill-core = { version = "0.1.0", path = "../exoquill-core" }
 serde = { version = "1.0.228", features = ["derive"] }

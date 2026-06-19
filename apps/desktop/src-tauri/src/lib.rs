@@ -2,22 +2,42 @@ mod jobs;
 mod notes;
 mod tray;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::mock::{MockFormatter, MockOcr};
 use exoquill_ai::ocr::OcrProvider;
+use exoquill_ai::provider::{Health, Provider};
+use exoquill_ai::TesseractOcr;
 use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
 use notes::AppState;
-use tauri::{Emitter, Manager};
+use tauri::{App, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 /// Returns the ExoQuill core crate version.
 #[tauri::command]
 fn app_version() -> String {
     exoquill_core::version().to_string()
+}
+
+/// Pick the OCR provider: real Tesseract when reachable, otherwise the mock.
+/// Paths come from env vars (dev) or the bundled resource dir (release).
+fn resolve_ocr_provider(app: &App) -> Arc<dyn OcrProvider> {
+    let binary = std::env::var("EXOQUILL_TESSERACT")
+        .unwrap_or_else(|_| r"C:\Program Files\Tesseract-OCR\tesseract.exe".to_string());
+    let tessdata = std::env::var("EXOQUILL_TESSDATA")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| app.path().resource_dir().ok().map(|d| d.join("tessdata")));
+    let tesseract = TesseractOcr::new(binary, tessdata);
+    if matches!(tesseract.health_check(), Health::Ready) {
+        Arc::new(tesseract)
+    } else {
+        Arc::new(MockOcr)
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,11 +64,12 @@ pub fn run() {
             let sink: Arc<dyn EventSink> = Arc::new(TauriEventSink::new(app.handle().clone()));
             let jobs = JobQueue::new(sink);
 
+            let ocr = resolve_ocr_provider(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
                 formatter: Arc::new(MockFormatter) as Arc<dyn FormatterProvider>,
-                ocr: Arc::new(MockOcr) as Arc<dyn OcrProvider>,
+                ocr,
             });
 
             tray::setup_tray(app)?;

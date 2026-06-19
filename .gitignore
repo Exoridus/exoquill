@@ -50,3 +50,6 @@ pnpm-debug.log*
 .workspace/**/*.zip
 .workspace/design-exploration/support.js
 .workspace/design-exploration/.thumbnail
+
+# Local AI runtimes + models (bundled as resources for release, not in git)
+runtimes/
