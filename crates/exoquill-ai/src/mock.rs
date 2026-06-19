@@ -60,11 +60,15 @@ mock_meta!(MockFormatter, "formatter.mock", "Mock Formatter");
 impl FormatterProvider for MockFormatter {
     fn run(&self, request: FormatRequest, cancel: &CancelToken) -> ProviderResult<FormatResponse> {
         bail_if_cancelled(cancel)?;
+        // Collapse intra-line whitespace but keep paragraph/line structure.
         let formatted = request
             .text
-            .split_whitespace()
+            .lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
             .collect::<Vec<_>>()
-            .join(" ");
+            .join("\n")
+            .trim()
+            .to_string();
         Ok(FormatResponse {
             formatted_text: formatted,
             warnings: Vec::new(),
