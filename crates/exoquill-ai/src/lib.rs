@@ -15,10 +15,12 @@ pub mod stt;
 pub mod tesseract;
 pub mod tts;
 pub mod vad;
+pub mod whisper;
 
 pub use llama::LlamaFormatter;
 pub use piper::PiperTts;
 pub use tesseract::TesseractOcr;
+pub use whisper::WhisperStt;
 
 pub use provider::{
     CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider, ProviderError,

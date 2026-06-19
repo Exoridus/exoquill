@@ -1,26 +1,40 @@
 import { DictateIcon, FormatIcon, OcrIcon, ReadIcon, TrashIcon } from "./icons";
 
-const SOON = "Dictation needs a local Whisper model (PR 5)";
-
 interface Props {
+  onDictate: () => void;
   onOcr: () => void;
   onFormat: () => void;
   onRead: () => void;
   onDelete: () => void;
+  dictating: boolean;
   formatting: boolean;
   reading: boolean;
 }
 
 /**
- * The four core actions plus delete. Dictate is disabled until the audio +
- * Whisper backend lands (PR 5); OCR, Format and Read are wired.
+ * The four core actions plus delete. Dictate toggles microphone capture; the
+ * audio is transcribed locally by Whisper (PR 5). OCR, Format and Read are wired.
  */
-export function ActionBar({ onOcr, onFormat, onRead, onDelete, formatting, reading }: Props) {
+export function ActionBar({
+  onDictate,
+  onOcr,
+  onFormat,
+  onRead,
+  onDelete,
+  dictating,
+  formatting,
+  reading,
+}: Props) {
   return (
     <div className="actionbar">
-      <button className="action-btn action-btn--primary" disabled title={SOON}>
+      <button
+        className={`action-btn action-btn--primary${dictating ? " action-btn--recording" : ""}`}
+        onClick={onDictate}
+        aria-pressed={dictating}
+        title={dictating ? "Stop dictation" : "Dictate into this note"}
+      >
         <DictateIcon size={14} />
-        Dictate
+        {dictating ? "Stop" : "Dictate"}
       </button>
       <button className="action-btn" onClick={onOcr} title="OCR an image into this note">
         <OcrIcon size={14} />

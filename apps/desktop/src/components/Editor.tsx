@@ -49,3 +49,12 @@ export function replaceSelection(editor: TiptapEditor, text: string): void {
   const { from, to } = editor.state.selection;
   editor.chain().focus().insertContentAt({ from, to }, text).run();
 }
+
+/** Insert `text` at the cursor (used for dictation), adding a separating space
+ *  when the preceding character isn't already whitespace. */
+export function insertAtCursor(editor: TiptapEditor, text: string): void {
+  const { from } = editor.state.selection;
+  const preceding = from > 1 ? editor.state.doc.textBetween(from - 1, from, "\n") : "";
+  const prefix = preceding && !/\s$/.test(preceding) ? " " : "";
+  editor.chain().focus().insertContent(prefix + text).run();
+}

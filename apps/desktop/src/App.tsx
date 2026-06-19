@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionBar } from "./components/ActionBar";
-import { Editor, replaceSelection, selectionText } from "./components/Editor";
+import { Editor, insertAtCursor, replaceSelection, selectionText } from "./components/Editor";
 import { PlusIcon } from "./components/icons";
 import { Sidebar } from "./components/Sidebar";
 import { Statusbar } from "./components/Statusbar";
@@ -11,6 +11,7 @@ import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
 import { playSamples, stopPlayback } from "./lib/audio";
+import { type DictationSession, startDictation } from "./lib/dictation";
 import { speak, stopSpeaking } from "./lib/speech";
 import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
@@ -36,12 +37,14 @@ export default function App() {
   const [saved, setSaved] = useState(true);
   const [formatting, setFormatting] = useState(false);
   const [reading, setReading] = useState(false);
+  const [dictating, setDictating] = useState(false);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
 
   const editorRef = useRef<TiptapEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dictationRef = useRef<DictationSession | null>(null);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -199,6 +202,46 @@ export default function App() {
     }
   }, [reading, activeNote]);
 
+  // Toggle microphone dictation. Captured audio is segmented in the webview and
+  // transcribed locally by Whisper; each finalized segment is inserted at the
+  // cursor. Starting without an active note auto-creates a dictation note.
+  const toggleDictation = useCallback(async () => {
+    if (dictating) {
+      const session = dictationRef.current;
+      dictationRef.current = null;
+      setDictating(false);
+      await session?.stop();
+      return;
+    }
+    if (!activeId) {
+      const note = await api.createNote("", "dictation");
+      setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)]));
+      setActiveId(note.id);
+    }
+    try {
+      const session = await startDictation({
+        languageMode: activeNote?.languageMode,
+        onText: (text) => {
+          const editor = editorRef.current;
+          if (editor) insertAtCursor(editor, text);
+        },
+        onError: (message) => console.error("dictation:", message),
+      });
+      dictationRef.current = session;
+      setDictating(true);
+    } catch (err) {
+      console.error("could not start dictation:", err);
+      setDictating(false);
+    }
+  }, [dictating, activeId, activeNote]);
+
+  // Release the microphone if the app unmounts mid-dictation.
+  useEffect(() => {
+    return () => {
+      void dictationRef.current?.stop();
+    };
+  }, []);
+
   // Global Quick-Note shortcut (Ctrl+Alt+N) and tray "New Note" → create a note.
   useEffect(() => {
     const unlisten = listen("quick-note", () => void newNote());
@@ -248,10 +291,12 @@ export default function App() {
           {activeNote ? (
             <>
               <ActionBar
+                onDictate={() => void toggleDictation()}
                 onOcr={triggerOcr}
                 onFormat={() => void formatActive()}
                 onRead={() => void readActive()}
                 onDelete={() => void deleteActive()}
+                dictating={dictating}
                 formatting={formatting}
                 reading={reading}
               />

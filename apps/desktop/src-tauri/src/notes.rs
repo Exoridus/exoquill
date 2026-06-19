@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::ocr::OcrProvider;
+use exoquill_ai::stt::SpeechToTextProvider;
 use exoquill_ai::tts::TextToSpeechProvider;
 use exoquill_core::note::{NewNote, Note, NoteSource, NoteUpdate};
 use exoquill_core::JobQueue;
@@ -18,6 +19,8 @@ pub struct AppState {
     pub jobs: JobQueue,
     pub formatter: Arc<dyn FormatterProvider>,
     pub ocr: Arc<dyn OcrProvider>,
+    /// Real Whisper when reachable, otherwise the mock (placeholder transcript).
+    pub stt: Arc<dyn SpeechToTextProvider>,
     /// `None` when no local TTS is available; the UI falls back to system speech.
     pub tts: Option<Arc<dyn TextToSpeechProvider>>,
 }

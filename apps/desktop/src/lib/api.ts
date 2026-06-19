@@ -54,6 +54,22 @@ export function formatText(text: string, instruction?: string): Promise<string> 
   return invoke<string>("format_text", { text, instruction: instruction ?? null });
 }
 
+/** Transcribe one dictation segment (mono PCM at `sampleRate`) and return the
+ *  recognized text. The frontend captures and segments the audio. */
+export function transcribe(
+  samples: number[],
+  sampleRate: number,
+  languageMode?: string,
+  customTerms?: string[],
+): Promise<string> {
+  return invoke<string>("transcribe", {
+    samples,
+    sampleRate,
+    languageMode: languageMode ?? null,
+    customTerms: customTerms ?? null,
+  });
+}
+
 /** Synthesize speech via the local TTS provider; rejects if none is available. */
 export function ttsSpeak(text: string): Promise<TtsResponse> {
   return invoke<TtsResponse>("tts_speak", { text });
