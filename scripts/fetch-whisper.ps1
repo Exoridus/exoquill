@@ -52,15 +52,17 @@ if ($Force -or -not (Test-Path $cli)) {
     Expand-Archive -Path $zipPath -DestinationPath $whisperDir -Force
     Remove-Item $zipPath -Force
 
-    # Release zips sometimes nest binaries in a subfolder and/or still ship the
-    # CLI as main.exe; normalize so the resolver finds whisper\whisper-cli.exe.
-    if (-not (Test-Path $cli)) {
-        $found = Get-ChildItem -Path $whisperDir -Recurse -File |
-            Where-Object { $_.Name -in @("whisper-cli.exe", "main.exe") } |
-            Select-Object -First 1
-        if (-not $found) { throw "whisper-cli.exe / main.exe not found in the extracted archive." }
-        Get-ChildItem -Path $found.DirectoryName -File | Copy-Item -Destination $whisperDir -Force
-        Copy-Item -Path $found.FullName -Destination $cli -Force
+    # whisper.cpp Windows zips ship the real binaries under Release\ alongside
+    # tiny deprecation-stub .exes at the top level (running a stub just prints a
+    # warning and exits non-zero). Pick the real whisper-cli.exe (the stub is
+    # only a few KB) and flatten its folder up so the resolver finds
+    # whisper\whisper-cli.exe next to its ggml/whisper DLLs.
+    $real = Get-ChildItem -Path $whisperDir -Recurse -Filter "whisper-cli.exe" |
+        Sort-Object Length -Descending | Select-Object -First 1
+    if (-not $real) { throw "whisper-cli.exe not found in the extracted archive." }
+    if ($real.DirectoryName -ne $whisperDir) {
+        Get-ChildItem -Path $real.DirectoryName -File | Copy-Item -Destination $whisperDir -Force
+        Remove-Item -Path (Join-Path $whisperDir "Release") -Recurse -Force -ErrorAction SilentlyContinue
     }
 } else {
     Write-Host "Runtime already present: $cli"
