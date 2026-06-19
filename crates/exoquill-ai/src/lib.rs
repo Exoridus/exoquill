@@ -9,6 +9,7 @@ pub mod formatter;
 pub mod llama;
 pub mod mock;
 pub mod ocr;
+pub mod piper;
 pub mod provider;
 pub mod stt;
 pub mod tesseract;
@@ -16,6 +17,7 @@ pub mod tts;
 pub mod vad;
 
 pub use llama::LlamaFormatter;
+pub use piper::PiperTts;
 pub use tesseract::TesseractOcr;
 
 pub use provider::{

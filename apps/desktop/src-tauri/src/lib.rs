@@ -9,7 +9,8 @@ use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::mock::{MockFormatter, MockOcr};
 use exoquill_ai::ocr::OcrProvider;
 use exoquill_ai::provider::{Health, Provider};
-use exoquill_ai::{LlamaFormatter, TesseractOcr};
+use exoquill_ai::tts::TextToSpeechProvider;
+use exoquill_ai::{LlamaFormatter, PiperTts, TesseractOcr};
 use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
@@ -72,6 +73,27 @@ fn resolve_formatter_provider(app: &App) -> Arc<dyn FormatterProvider> {
     }
 }
 
+/// Pick the TTS provider: real Piper when reachable, else `None` (the UI then
+/// falls back to the webview's system speech synthesis).
+fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+    let resources = app.path().resource_dir().ok();
+    let binary = std::env::var("EXOQUILL_PIPER")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| resources.as_ref().map(|d| d.join("piper/piper.exe")))?;
+    let model = std::env::var("EXOQUILL_PIPER_VOICE")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("piper-voices/de_DE-thorsten-medium.onnx"))
+        })?;
+    let piper = PiperTts::new(binary, model, 22_050);
+    matches!(piper.health_check(), Health::Ready)
+        .then(|| Arc::new(piper) as Arc<dyn TextToSpeechProvider>)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -98,11 +120,13 @@ pub fn run() {
 
             let ocr = resolve_ocr_provider(app);
             let formatter = resolve_formatter_provider(app);
+            let tts = resolve_tts_provider(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
                 formatter,
                 ocr,
+                tts,
             });
 
             tray::setup_tray(app)?;
@@ -125,6 +149,7 @@ pub fn run() {
             jobs::list_jobs,
             jobs::run_ocr,
             jobs::format_text,
+            jobs::tts_speak,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

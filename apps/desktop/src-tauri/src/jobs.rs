@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use exoquill_ai::formatter::FormatRequest;
 use exoquill_ai::ocr::OcrRequest;
+use exoquill_ai::tts::{TtsRequest, TtsResponse};
 use exoquill_core::note::NoteUpdate;
 use exoquill_core::{CancelToken, Event, EventSink, Job};
 use tauri::{AppHandle, Emitter, State};
@@ -168,4 +169,22 @@ pub fn format_text(
         .run(request, &CancelToken::new())
         .map_err(|e| e.to_string())?;
     Ok(response.formatted_text)
+}
+
+/// Synthesize speech for `text` with the local TTS provider, returning the PCM
+/// samples for the frontend to play. Errors when no local TTS is available so
+/// the UI can fall back to system speech.
+#[tauri::command]
+pub fn tts_speak(state: State<AppState>, text: String) -> Result<TtsResponse, String> {
+    let tts = state
+        .tts
+        .as_ref()
+        .ok_or_else(|| "no local TTS provider".to_string())?;
+    let request = TtsRequest {
+        text,
+        voice_id: "de".into(),
+        speed: 1.0,
+    };
+    tts.run(request, &CancelToken::new())
+        .map_err(|e| e.to_string())
 }

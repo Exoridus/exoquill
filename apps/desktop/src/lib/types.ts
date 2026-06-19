@@ -38,6 +38,11 @@ export interface Job {
   finishedAt: string | null;
 }
 
+export interface TtsResponse {
+  samples: number[];
+  sampleRate: number;
+}
+
 // Backend event bus payloads (tagged by `type`); see exoquill-core::events.
 export type BackendEvent =
   | { type: "job_updated"; job: Job }

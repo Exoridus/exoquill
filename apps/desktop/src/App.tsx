@@ -10,6 +10,7 @@ import { Statusbar } from "./components/Statusbar";
 import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
+import { playSamples, stopPlayback } from "./lib/audio";
 import { speak, stopSpeaking } from "./lib/speech";
 import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
@@ -65,6 +66,7 @@ export default function App() {
   // Stop any read-aloud when switching notes.
   useEffect(() => {
     stopSpeaking();
+    stopPlayback();
     setReading(false);
   }, [activeId]);
 
@@ -176,10 +178,12 @@ export default function App() {
     }
   }, [activeId, flushSave]);
 
-  // Read the selection, or the whole note, aloud — toggling stop.
-  const readActive = useCallback(() => {
+  // Read the selection, or the whole note, aloud — toggling stop. Uses the
+  // local Piper TTS when available, else the webview's system speech.
+  const readActive = useCallback(async () => {
     if (reading) {
       stopSpeaking();
+      stopPlayback();
       setReading(false);
       return;
     }
@@ -187,7 +191,12 @@ export default function App() {
     const text = selection.trim() ? selection : activeNote?.contentMarkdown ?? "";
     if (!text.trim()) return;
     setReading(true);
-    speak(text, { onEnd: () => setReading(false) });
+    try {
+      const audio = await api.ttsSpeak(text);
+      playSamples(audio.samples, audio.sampleRate, () => setReading(false));
+    } catch {
+      speak(text, { onEnd: () => setReading(false) });
+    }
   }, [reading, activeNote]);
 
   // Global Quick-Note shortcut (Ctrl+Alt+N) and tray "New Note" → create a note.
@@ -241,7 +250,7 @@ export default function App() {
               <ActionBar
                 onOcr={triggerOcr}
                 onFormat={() => void formatActive()}
-                onRead={readActive}
+                onRead={() => void readActive()}
                 onDelete={() => void deleteActive()}
                 formatting={formatting}
                 reading={reading}

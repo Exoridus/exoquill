@@ -1,7 +1,7 @@
 // Typed wrappers around the Tauri notes commands (see src-tauri/src/notes.rs).
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Job, Note, NoteSource, NoteUpdate } from "./types";
+import type { Job, Note, NoteSource, NoteUpdate, TtsResponse } from "./types";
 
 export function listNotes(): Promise<Note[]> {
   return invoke<Note[]>("list_notes");
@@ -52,4 +52,9 @@ export function runOcr(noteId: string, imageBytes: number[]): Promise<string> {
 /** Format a short snippet synchronously and return the result. */
 export function formatText(text: string, instruction?: string): Promise<string> {
   return invoke<string>("format_text", { text, instruction: instruction ?? null });
+}
+
+/** Synthesize speech via the local TTS provider; rejects if none is available. */
+export function ttsSpeak(text: string): Promise<TtsResponse> {
+  return invoke<TtsResponse>("tts_speak", { text });
 }
