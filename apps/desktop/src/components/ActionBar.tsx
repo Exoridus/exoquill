@@ -1,26 +1,28 @@
 import { DictateIcon, FormatIcon, OcrIcon, ReadIcon, TrashIcon } from "./icons";
 
-const SOON = "Coming in a later milestone";
+const SOON = "Dictation needs a local Whisper model (PR 5)";
 
 interface Props {
+  onOcr: () => void;
   onFormat: () => void;
+  onRead: () => void;
   onDelete: () => void;
   formatting: boolean;
+  reading: boolean;
 }
 
 /**
- * The four core actions plus delete. Format runs through the job queue (mock
- * provider for now); Dictate/OCR/Read are disabled until their backends land
- * (OCR PR 3, Dictate PR 5, Read PR 6).
+ * The four core actions plus delete. Dictate is disabled until the audio +
+ * Whisper backend lands (PR 5); OCR, Format and Read are wired.
  */
-export function ActionBar({ onFormat, onDelete, formatting }: Props) {
+export function ActionBar({ onOcr, onFormat, onRead, onDelete, formatting, reading }: Props) {
   return (
     <div className="actionbar">
       <button className="action-btn action-btn--primary" disabled title={SOON}>
         <DictateIcon size={14} />
         Dictate
       </button>
-      <button className="action-btn" disabled title={SOON}>
+      <button className="action-btn" onClick={onOcr} title="OCR an image into this note">
         <OcrIcon size={14} />
         OCR
       </button>
@@ -28,14 +30,18 @@ export function ActionBar({ onFormat, onDelete, formatting }: Props) {
         className="action-btn"
         onClick={onFormat}
         disabled={formatting}
-        title="Quick-format this note (mock provider)"
+        title="Format the selection, or the whole note"
       >
         <FormatIcon size={14} />
         {formatting ? "Formatting…" : "Format"}
       </button>
-      <button className="action-btn" disabled title={SOON}>
+      <button
+        className="action-btn"
+        onClick={onRead}
+        title="Read the selection or note aloud"
+      >
         <ReadIcon size={14} />
-        Read
+        {reading ? "Stop" : "Read"}
       </button>
       <span className="actionbar__badge">MD</span>
       <button className="icon-btn" onClick={onDelete} title="Delete note" aria-label="Delete note">

@@ -4,7 +4,8 @@ mod notes;
 use std::sync::{Arc, Mutex};
 
 use exoquill_ai::formatter::FormatterProvider;
-use exoquill_ai::mock::MockFormatter;
+use exoquill_ai::mock::{MockFormatter, MockOcr};
+use exoquill_ai::ocr::OcrProvider;
 use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
@@ -35,6 +36,7 @@ pub fn run() {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
                 formatter: Arc::new(MockFormatter) as Arc<dyn FormatterProvider>,
+                ocr: Arc::new(MockOcr) as Arc<dyn OcrProvider>,
             });
             Ok(())
         })
@@ -50,6 +52,8 @@ pub fn run() {
             jobs::format_note,
             jobs::cancel_job,
             jobs::list_jobs,
+            jobs::run_ocr,
+            jobs::format_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

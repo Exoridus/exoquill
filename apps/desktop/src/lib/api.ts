@@ -43,3 +43,13 @@ export function cancelJob(id: string): Promise<void> {
 export function listJobs(): Promise<Job[]> {
   return invoke<Job[]>("list_jobs");
 }
+
+/** OCR an image (raw bytes) and append the text to the note, as a job. */
+export function runOcr(noteId: string, imageBytes: number[]): Promise<string> {
+  return invoke<string>("run_ocr", { noteId, imageBytes });
+}
+
+/** Format a short snippet synchronously and return the result. */
+export function formatText(text: string, instruction?: string): Promise<string> {
+  return invoke<string>("format_text", { text, instruction: instruction ?? null });
+}

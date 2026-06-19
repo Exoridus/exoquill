@@ -1,15 +1,18 @@
 import Placeholder from "@tiptap/extension-placeholder";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { type Editor as TiptapEditor, EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { useEffect } from "react";
 import { Markdown } from "tiptap-markdown";
 
 interface Props {
   /** Initial Markdown. The parent remounts this via `key` on note switch. */
   initialMarkdown: string;
   onChange: (markdown: string) => void;
+  /** Receives the editor instance so the parent can act on the selection. */
+  onReady?: (editor: TiptapEditor) => void;
 }
 
-export function Editor({ initialMarkdown, onChange }: Props) {
+export function Editor({ initialMarkdown, onChange, onReady }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -26,5 +29,23 @@ export function Editor({ initialMarkdown, onChange }: Props) {
     },
   });
 
+  useEffect(() => {
+    if (editor && onReady) onReady(editor);
+  }, [editor, onReady]);
+
   return <EditorContent editor={editor} className="editor-body" />;
+}
+
+/** Read the current selection as plain text, or "" if nothing is selected. */
+export function selectionText(editor: TiptapEditor | null): string {
+  if (!editor) return "";
+  const { from, to } = editor.state.selection;
+  if (from === to) return "";
+  return editor.state.doc.textBetween(from, to, "\n");
+}
+
+/** Replace the current selection with `text` (a single undoable step). */
+export function replaceSelection(editor: TiptapEditor, text: string): void {
+  const { from, to } = editor.state.selection;
+  editor.chain().focus().insertContentAt({ from, to }, text).run();
 }

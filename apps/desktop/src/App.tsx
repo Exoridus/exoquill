@@ -1,14 +1,16 @@
+import { type Editor as TiptapEditor } from "@tiptap/react";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionBar } from "./components/ActionBar";
-import { Editor } from "./components/Editor";
+import { Editor, replaceSelection, selectionText } from "./components/Editor";
 import { PlusIcon } from "./components/icons";
 import { Sidebar } from "./components/Sidebar";
 import { Statusbar } from "./components/Statusbar";
 import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
+import { speak, stopSpeaking } from "./lib/speech";
 import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
 
@@ -32,9 +34,13 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [saved, setSaved] = useState(true);
   const [formatting, setFormatting] = useState(false);
-  // Bumped when a note's content changes out-of-band (e.g. a format job), to
+  const [reading, setReading] = useState(false);
+  // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
+
+  const editorRef = useRef<TiptapEditor | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -55,6 +61,12 @@ export default function App() {
     const t = window.setTimeout(() => void load(query), query ? 200 : 0);
     return () => clearTimeout(t);
   }, [query, load]);
+
+  // Stop any read-aloud when switching notes.
+  useEffect(() => {
+    stopSpeaking();
+    setReading(false);
+  }, [activeId]);
 
   // Debounced autosave: optimistic local update now, persist after a pause.
   const saveTimer = useRef<number | null>(null);
@@ -97,7 +109,7 @@ export default function App() {
     [activeId, scheduleSave],
   );
 
-  // Listen for backend job/event-bus messages.
+  // Backend job/event-bus messages.
   useEffect(() => {
     const unlisten = listen<BackendEvent>("backend-event", ({ payload }) => {
       if (payload.type === "job_updated") {
@@ -118,6 +130,10 @@ export default function App() {
     };
   }, [load]);
 
+  const handleEditorReady = useCallback((editor: TiptapEditor) => {
+    editorRef.current = editor;
+  }, []);
+
   const newNote = useCallback(async () => {
     const note = await api.createNote("");
     setQuery("");
@@ -135,7 +151,20 @@ export default function App() {
     setActiveId(fallback?.id ?? null);
   }, [activeNote, notes]);
 
+  // Format the selection (direct replace + undo), or the whole note via the
+  // job queue when nothing is selected (decisions D6).
   const formatActive = useCallback(async () => {
+    const editor = editorRef.current;
+    const selection = selectionText(editor);
+    if (editor && selection.trim()) {
+      try {
+        const formatted = await api.formatText(selection);
+        replaceSelection(editor, formatted);
+      } catch (err) {
+        console.error("format selection failed:", err);
+      }
+      return;
+    }
     if (!activeId) return;
     setFormatting(true);
     try {
@@ -147,8 +176,47 @@ export default function App() {
     }
   }, [activeId, flushSave]);
 
+  // Read the selection, or the whole note, aloud — toggling stop.
+  const readActive = useCallback(() => {
+    if (reading) {
+      stopSpeaking();
+      setReading(false);
+      return;
+    }
+    const selection = selectionText(editorRef.current);
+    const text = selection.trim() ? selection : activeNote?.contentMarkdown ?? "";
+    if (!text.trim()) return;
+    setReading(true);
+    speak(text, { onEnd: () => setReading(false) });
+  }, [reading, activeNote]);
+
+  const triggerOcr = useCallback(() => fileInputRef.current?.click(), []);
+
+  const handleOcrFile = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // allow re-selecting the same file
+      if (!file || !activeId) return;
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+      try {
+        await flushSave();
+        await api.runOcr(activeId, bytes);
+      } catch (err) {
+        console.error("ocr failed:", err);
+      }
+    },
+    [activeId, flushSave],
+  );
+
   return (
     <div className="app">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleOcrFile}
+        style={{ display: "none" }}
+      />
       <Topbar theme={theme} onToggleTheme={toggleTheme} />
       <div className="body">
         <Sidebar
@@ -163,9 +231,12 @@ export default function App() {
           {activeNote ? (
             <>
               <ActionBar
+                onOcr={triggerOcr}
                 onFormat={() => void formatActive()}
+                onRead={readActive}
                 onDelete={() => void deleteActive()}
                 formatting={formatting}
+                reading={reading}
               />
               <div className="editor-scroll">
                 <input
@@ -179,6 +250,7 @@ export default function App() {
                   key={`${activeNote.id}:${reloadKey}`}
                   initialMarkdown={activeNote.contentMarkdown}
                   onChange={(md) => patchActive({ contentMarkdown: md })}
+                  onReady={handleEditorReady}
                 />
               </div>
               <Statusbar note={activeNote} saved={saved} />

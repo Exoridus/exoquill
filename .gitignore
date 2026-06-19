@@ -27,6 +27,9 @@ models/*.traineddata
 .env.local
 *.local
 
+# Agent worktrees (temporary, created by the Agent tool)
+.claude/worktrees/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use exoquill_ai::formatter::FormatterProvider;
+use exoquill_ai::ocr::OcrProvider;
 use exoquill_core::note::{NewNote, Note, NoteSource, NoteUpdate};
 use exoquill_core::JobQueue;
 use exoquill_db::Database;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub db: Arc<Mutex<Database>>,
     pub jobs: JobQueue,
     pub formatter: Arc<dyn FormatterProvider>,
+    pub ocr: Arc<dyn OcrProvider>,
 }
 
 type CommandResult<T> = Result<T, String>;

@@ -4,8 +4,9 @@
 use std::sync::Arc;
 
 use exoquill_ai::formatter::FormatRequest;
+use exoquill_ai::ocr::OcrRequest;
 use exoquill_core::note::NoteUpdate;
-use exoquill_core::{Event, EventSink, Job};
+use exoquill_core::{CancelToken, Event, EventSink, Job};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::notes::AppState;
@@ -86,4 +87,85 @@ pub fn cancel_job(state: State<AppState>, id: String) {
 #[tauri::command]
 pub fn list_jobs(state: State<AppState>) -> Vec<Job> {
     state.jobs.jobs()
+}
+
+/// Run OCR on an image and append the recognized text to the note, as an async
+/// job. Returns the job id; the result is persisted and announced via an event.
+#[tauri::command]
+pub fn run_ocr(
+    state: State<AppState>,
+    note_id: String,
+    image_bytes: Vec<u8>,
+) -> Result<String, String> {
+    let note = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.get_note(&note_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "note not found".to_string())?
+    };
+    let db = Arc::clone(&state.db);
+    let ocr = Arc::clone(&state.ocr);
+    let target_id = note_id.clone();
+
+    let job_id = state.jobs.enqueue(
+        "ocr",
+        Some(note_id),
+        Box::new(move |handle| {
+            handle.report_progress(0.3);
+            let request = OcrRequest {
+                image_bytes,
+                languages: "deu+eng".into(),
+            };
+            let response = ocr
+                .run(request, handle.cancel_token())
+                .map_err(|e| e.to_string())?;
+            handle.report_progress(0.8);
+            let mut content = note.content_markdown.clone();
+            if !content.trim().is_empty() {
+                content.push_str("\n\n");
+            }
+            content.push_str(&response.text);
+            db.lock()
+                .map_err(|e| e.to_string())?
+                .update_note(
+                    &target_id,
+                    NoteUpdate {
+                        content_markdown: Some(content),
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }),
+    );
+    Ok(job_id)
+}
+
+/// Format a short snippet (e.g. an editor selection) and return the result
+/// directly. Synchronous: selections are short and the result must land back at
+/// the exact cursor position. Whole-note formatting uses the job queue instead.
+#[tauri::command]
+pub fn format_text(
+    state: State<AppState>,
+    text: String,
+    instruction: Option<String>,
+) -> Result<String, String> {
+    let operation = if instruction.is_some() {
+        "custom_format"
+    } else {
+        "quick_format"
+    };
+    let request = FormatRequest {
+        text,
+        source: "manual".into(),
+        language_mode: "de_en_terms".into(),
+        operation: operation.into(),
+        instruction,
+        custom_terms: Vec::new(),
+    };
+    let response = state
+        .formatter
+        .run(request, &CancelToken::new())
+        .map_err(|e| e.to_string())?;
+    Ok(response.formatted_text)
 }
