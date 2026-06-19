@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+build/
+out/
+
+# Rust / Cargo / Tauri
+target/
+**/target/
+apps/desktop/src-tauri/gen/
+Cargo.lock.bak
+
+# Bundled model artifacts (large; not committed)
+models/*.bin
+models/*.onnx
+models/*.gguf
+models/*.traineddata
+*.onnx
+*.gguf
+
+# Environment / local config
+.env
+.env.local
+*.local
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Workspace scratch (internal, not shipped)
+.workspace/scratch/
+.workspace/reports/
