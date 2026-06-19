@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use exoquill_ai::formatter::FormatRequest;
 use exoquill_ai::ocr::OcrRequest;
-use exoquill_ai::stt::SttRequest;
 use exoquill_ai::tts::{TtsRequest, TtsResponse};
 use exoquill_core::note::NoteUpdate;
 use exoquill_core::{CancelToken, Event, EventSink, Job};
@@ -170,31 +169,6 @@ pub fn format_text(
         .run(request, &CancelToken::new())
         .map_err(|e| e.to_string())?;
     Ok(response.formatted_text)
-}
-
-/// Transcribe one dictation segment's PCM samples and return the recognized
-/// text. Synchronous like `format_text`: segments are short and the transcript
-/// must land back at the editor cursor immediately. The frontend captures and
-/// segments the audio; only inference crosses into the Whisper sidecar.
-#[tauri::command]
-pub fn transcribe(
-    state: State<AppState>,
-    samples: Vec<f32>,
-    sample_rate: u32,
-    language_mode: Option<String>,
-    custom_terms: Option<Vec<String>>,
-) -> Result<String, String> {
-    let request = SttRequest {
-        samples,
-        sample_rate,
-        language_mode: language_mode.unwrap_or_else(|| "de_en_terms".into()),
-        custom_terms: custom_terms.unwrap_or_default(),
-    };
-    let response = state
-        .stt
-        .run(request, &CancelToken::new())
-        .map_err(|e| e.to_string())?;
-    Ok(response.text)
 }
 
 /// Synthesize speech for `text` with the local TTS provider, returning the PCM

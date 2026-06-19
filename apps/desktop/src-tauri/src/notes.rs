@@ -23,6 +23,9 @@ pub struct AppState {
     pub stt: Arc<dyn SpeechToTextProvider>,
     /// `None` when no local TTS is available; the UI falls back to system speech.
     pub tts: Option<Arc<dyn TextToSpeechProvider>>,
+    /// The active dictation session, if capturing. Guarded so start/stop and the
+    /// worker never race on it.
+    pub dictation: Mutex<Option<crate::dictation::DictationController>>,
 }
 
 type CommandResult<T> = Result<T, String>;

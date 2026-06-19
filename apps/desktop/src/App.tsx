@@ -11,7 +11,7 @@ import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
 import { playSamples, stopPlayback } from "./lib/audio";
-import { type DictationSession, startDictation } from "./lib/dictation";
+import { startDictation, stopDictation, subscribeDictation } from "./lib/dictation";
 import { speak, stopSpeaking } from "./lib/speech";
 import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
@@ -38,15 +38,15 @@ export default function App() {
   const [formatting, setFormatting] = useState(false);
   const [reading, setReading] = useState(false);
   const [dictating, setDictating] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [dictationError, setDictationError] = useState<string | null>(null);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
 
   const editorRef = useRef<TiptapEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dictationRef = useRef<DictationSession | null>(null);
-  // Guards against re-entering the async start/stop (e.g. a double-click would
-  // otherwise open a second mic session and leak the first).
+  // Guards against re-entering the async start/stop (e.g. a double-click).
   const dictationBusy = useRef(false);
 
   const activeNote = useMemo(
@@ -213,43 +213,58 @@ export default function App() {
     dictationBusy.current = true;
     try {
       if (dictating) {
-        const session = dictationRef.current;
-        dictationRef.current = null;
-        setDictating(false);
-        await session?.stop();
-        return;
+        await stopDictation();
+      } else {
+        setDictationError(null);
+        let language = activeNote?.languageMode;
+        if (!activeId) {
+          const note = await api.createNote("", "dictation");
+          setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)]));
+          setActiveId(note.id);
+          language = note.languageMode;
+        }
+        await startDictation(undefined, language);
       }
-      if (!activeId) {
-        const note = await api.createNote("", "dictation");
-        setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)]));
-        setActiveId(note.id);
-      }
-      try {
-        const session = await startDictation({
-          languageMode: activeNote?.languageMode,
-          onText: (text) => {
-            const editor = editorRef.current;
-            if (editor) insertAtCursor(editor, text);
-          },
-          onError: (message) => console.error("dictation:", message),
-        });
-        dictationRef.current = session;
-        setDictating(true);
-      } catch (err) {
-        console.error("could not start dictation:", err);
-        setDictating(false);
-      }
+    } catch (err) {
+      setDictationError(String(err));
+      setDictating(false);
     } finally {
       dictationBusy.current = false;
     }
   }, [dictating, activeId, activeNote]);
 
-  // Release the microphone if the app unmounts mid-dictation.
+  // Subscribe once to the backend's live dictation events: insert each
+  // transcript chunk at the cursor, drive the level meter, surface errors, and
+  // track recording state. Stop capture if the app unmounts mid-dictation.
   useEffect(() => {
+    const unsub = subscribeDictation({
+      onSegment: (text) => {
+        const editor = editorRef.current;
+        if (editor) insertAtCursor(editor, text);
+      },
+      onLevel: setMicLevel,
+      onError: setDictationError,
+      onStarted: () => {
+        setDictating(true);
+        setDictationError(null);
+      },
+      onStopped: () => {
+        setDictating(false);
+        setMicLevel(0);
+      },
+    });
     return () => {
-      void dictationRef.current?.stop();
+      void unsub.then((fn) => fn());
+      void stopDictation();
     };
   }, []);
+
+  // Auto-dismiss a dictation error after a few seconds.
+  useEffect(() => {
+    if (!dictationError) return;
+    const t = window.setTimeout(() => setDictationError(null), 5000);
+    return () => clearTimeout(t);
+  }, [dictationError]);
 
   // Global Quick-Note shortcut (Ctrl+Alt+N) and tray "New Note" → create a note.
   useEffect(() => {
@@ -309,6 +324,18 @@ export default function App() {
                 formatting={formatting}
                 reading={reading}
               />
+              {dictating && (
+                <div className="dictation-bar" role="status" aria-live="polite">
+                  <span className="dictation-bar__dot" />
+                  <span className="dictation-bar__label">Aufnahme läuft…</span>
+                  <span className="dictation-bar__meter">
+                    <span
+                      className="dictation-bar__level"
+                      style={{ width: `${Math.round(Math.min(1, micLevel) * 100)}%` }}
+                    />
+                  </span>
+                </div>
+              )}
               <div className="editor-scroll">
                 <input
                   className="editor-title"
@@ -342,6 +369,11 @@ export default function App() {
           )}
         </main>
       </div>
+      {dictationError && (
+        <div className="dictation-error" role="alert">
+          {dictationError}
+        </div>
+      )}
     </div>
   );
 }

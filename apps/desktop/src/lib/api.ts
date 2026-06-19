@@ -54,20 +54,23 @@ export function formatText(text: string, instruction?: string): Promise<string> 
   return invoke<string>("format_text", { text, instruction: instruction ?? null });
 }
 
-/** Transcribe one dictation segment (mono PCM at `sampleRate`) and return the
- *  recognized text. The frontend captures and segments the audio. */
-export function transcribe(
-  samples: number[],
-  sampleRate: number,
-  languageMode?: string,
-  customTerms?: string[],
-): Promise<string> {
-  return invoke<string>("transcribe", {
-    samples,
-    sampleRate,
+/** Start live dictation into the active note. Capture + transcription run in
+ *  the backend, which streams `dictation_*` events (see lib/dictation.ts). */
+export function startDictation(device?: string, languageMode?: string): Promise<void> {
+  return invoke("start_dictation", {
+    device: device ?? null,
     languageMode: languageMode ?? null,
-    customTerms: customTerms ?? null,
   });
+}
+
+/** Stop the current dictation session, flushing any trailing utterance. */
+export function stopDictation(): Promise<void> {
+  return invoke("stop_dictation");
+}
+
+/** The microphones available for the dictation device picker. */
+export function listInputDevices(): Promise<string[]> {
+  return invoke<string[]>("list_input_devices");
 }
 
 /** Synthesize speech via the local TTS provider; rejects if none is available. */

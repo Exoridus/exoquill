@@ -1,3 +1,4 @@
+mod dictation;
 mod jobs;
 mod notes;
 mod tray;
@@ -160,6 +161,7 @@ pub fn run() {
                 ocr,
                 stt,
                 tts,
+                dictation: Mutex::new(None),
             });
 
             tray::setup_tray(app)?;
@@ -182,8 +184,10 @@ pub fn run() {
             jobs::list_jobs,
             jobs::run_ocr,
             jobs::format_text,
-            jobs::transcribe,
             jobs::tts_speak,
+            dictation::start_dictation,
+            dictation::stop_dictation,
+            dictation::list_input_devices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

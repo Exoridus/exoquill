@@ -3,13 +3,59 @@
 //! Microphone input, gain/normalization and the ring buffer feeding VAD
 //! segmentation (see `docs/roadmap.md`, PR 5).
 //!
-//! This module currently provides device enumeration over the platform's
-//! default audio host plus small, dependency-free helpers for computing
-//! input-level metrics (RMS and peak) that drive a live input meter.
-//! Actual capture streams and the ring buffer are intentionally out of
-//! scope here and will be added alongside whisper integration.
+//! Alongside device enumeration and input-level helpers (RMS and peak), this
+//! crate provides the live dictation pipeline: microphone [`capture`] via cpal,
+//! energy-based [`segmenter`]ation into utterances, and [`resample_to_16k`] to
+//! feed whisper.cpp (which is fixed at 16 kHz mono).
+
+pub mod capture;
+pub mod segmenter;
+
+pub use capture::{start_capture, Capture};
+pub use segmenter::Segmenter;
 
 use cpal::traits::{DeviceTrait, HostTrait};
+
+/// whisper.cpp's fixed input sample rate.
+const WHISPER_RATE: u32 = 16_000;
+
+/// Resample mono `samples` from `from_rate` to 16 kHz with linear interpolation.
+///
+/// Linear interpolation introduces mild aliasing on downsampling, but whisper
+/// is robust to it and this keeps the pipeline dependency-free; a polyphase
+/// resampler is a possible later refinement. Returns the input unchanged when
+/// already at 16 kHz or empty.
+///
+/// # Examples
+///
+/// ```
+/// use exoquill_audio::resample_to_16k;
+///
+/// // 48 kHz -> 16 kHz is a 3:1 decimation: length scales by ~1/3.
+/// let input = vec![0.0_f32; 4800];
+/// let out = resample_to_16k(&input, 48_000);
+/// assert!((out.len() as i64 - 1600).abs() <= 1);
+/// // Already at the target rate: returned unchanged.
+/// assert_eq!(resample_to_16k(&[0.1, 0.2], 16_000).len(), 2);
+/// ```
+pub fn resample_to_16k(samples: &[f32], from_rate: u32) -> Vec<f32> {
+    if from_rate == WHISPER_RATE || from_rate == 0 || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let ratio = WHISPER_RATE as f64 / from_rate as f64;
+    let out_len = ((samples.len() as f64) * ratio).round() as usize;
+    let last = samples.len() - 1;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src = i as f64 / ratio;
+        let idx = src.floor() as usize;
+        let frac = (src - idx as f64) as f32;
+        let a = samples[idx.min(last)];
+        let b = samples[(idx + 1).min(last)];
+        out.push(a + (b - a) * frac);
+    }
+    out
+}
 
 /// Returns the names of the available audio *input* devices.
 ///
