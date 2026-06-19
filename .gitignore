@@ -42,3 +42,8 @@ pnpm-debug.log*
 # Workspace scratch (internal, not shipped)
 .workspace/scratch/
 .workspace/reports/
+
+# Design exploration: keep the brand HTML + mockups, drop the artifact cruft
+.workspace/**/*.zip
+.workspace/design-exploration/support.js
+.workspace/design-exploration/.thumbnail
