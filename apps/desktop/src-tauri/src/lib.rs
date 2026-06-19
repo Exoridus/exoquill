@@ -1,19 +1,17 @@
+mod jobs;
 mod notes;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use exoquill_ai::formatter::FormatterProvider;
+use exoquill_ai::mock::MockFormatter;
+use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
+use jobs::TauriEventSink;
 use notes::AppState;
 use tauri::Manager;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-/// Returns the ExoQuill core crate version. Proves the workspace wiring:
-/// frontend -> Tauri command -> `exoquill-core`.
+/// Returns the ExoQuill core crate version.
 #[tauri::command]
 fn app_version() -> String {
     exoquill_core::version().to_string()
@@ -29,11 +27,18 @@ pub fn run() {
             let db_path = data_dir.join("exoquill.db");
             let db = Database::open(db_path.to_str().expect("data dir path is valid UTF-8"))
                 .map_err(|e| format!("failed to open database at {db_path:?}: {e}"))?;
-            app.manage(AppState { db: Mutex::new(db) });
+
+            let sink: Arc<dyn EventSink> = Arc::new(TauriEventSink::new(app.handle().clone()));
+            let jobs = JobQueue::new(sink);
+
+            app.manage(AppState {
+                db: Arc::new(Mutex::new(db)),
+                jobs,
+                formatter: Arc::new(MockFormatter) as Arc<dyn FormatterProvider>,
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             app_version,
             notes::create_note,
             notes::get_note,
@@ -42,6 +47,9 @@ pub fn run() {
             notes::list_notes,
             notes::search_notes,
             notes::resolve_target_note,
+            jobs::format_note,
+            jobs::cancel_job,
+            jobs::list_jobs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

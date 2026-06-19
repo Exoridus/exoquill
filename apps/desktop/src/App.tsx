@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionBar } from "./components/ActionBar";
@@ -8,7 +9,7 @@ import { Statusbar } from "./components/Statusbar";
 import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
-import type { Note, NoteUpdate } from "./lib/types";
+import type { BackendEvent, Note, NoteUpdate } from "./lib/types";
 import "./styles/app.css";
 
 function sortNotes(notes: Note[]): Note[] {
@@ -30,19 +31,25 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [saved, setSaved] = useState(true);
+  const [formatting, setFormatting] = useState(false);
+  // Bumped when a note's content changes out-of-band (e.g. a format job), to
+  // remount the editor so it picks up the new Markdown.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
     [notes, activeId],
   );
 
-  // Load notes — full list, or search results when a query is set.
   const load = useCallback(async (q: string) => {
     const list = q.trim() ? await api.searchNotes(q) : await api.listNotes();
     const sorted = sortNotes(list);
     setNotes(sorted);
     setActiveId((cur) => (cur && sorted.some((n) => n.id === cur) ? cur : sorted[0]?.id ?? null));
   }, []);
+
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   useEffect(() => {
     const t = window.setTimeout(() => void load(query), query ? 200 : 0);
@@ -68,6 +75,19 @@ export default function App() {
     }, 450);
   }, []);
 
+  const flushSave = useCallback(async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (activeId && Object.keys(pending.current).length > 0) {
+      const update = pending.current;
+      pending.current = {};
+      await api.updateNote(activeId, update);
+      setSaved(true);
+    }
+  }, [activeId]);
+
   const patchActive = useCallback(
     (patch: NoteUpdate) => {
       if (!activeId) return;
@@ -76,6 +96,27 @@ export default function App() {
     },
     [activeId, scheduleSave],
   );
+
+  // Listen for backend job/event-bus messages.
+  useEffect(() => {
+    const unlisten = listen<BackendEvent>("backend-event", ({ payload }) => {
+      if (payload.type === "job_updated") {
+        const { job } = payload;
+        const terminal =
+          job.status === "completed" || job.status === "failed" || job.status === "cancelled";
+        if (terminal) {
+          if (job.jobType === "format") setFormatting(false);
+          if (job.status === "failed" && job.error) console.error("Job failed:", job.error);
+          void load(queryRef.current).then(() => setReloadKey((k) => k + 1));
+        }
+      } else if (payload.type === "notes_changed") {
+        void load(queryRef.current);
+      }
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [load]);
 
   const newNote = useCallback(async () => {
     const note = await api.createNote("");
@@ -94,6 +135,18 @@ export default function App() {
     setActiveId(fallback?.id ?? null);
   }, [activeNote, notes]);
 
+  const formatActive = useCallback(async () => {
+    if (!activeId) return;
+    setFormatting(true);
+    try {
+      await flushSave();
+      await api.formatNote(activeId);
+    } catch (err) {
+      setFormatting(false);
+      console.error("format failed:", err);
+    }
+  }, [activeId, flushSave]);
+
   return (
     <div className="app">
       <Topbar theme={theme} onToggleTheme={toggleTheme} />
@@ -109,7 +162,11 @@ export default function App() {
         <main className="editor-pane">
           {activeNote ? (
             <>
-              <ActionBar onDelete={() => void deleteActive()} />
+              <ActionBar
+                onFormat={() => void formatActive()}
+                onDelete={() => void deleteActive()}
+                formatting={formatting}
+              />
               <div className="editor-scroll">
                 <input
                   className="editor-title"
@@ -119,7 +176,7 @@ export default function App() {
                 />
                 <div className="editor-meta">{noteMeta(activeNote)}</div>
                 <Editor
-                  key={activeNote.id}
+                  key={`${activeNote.id}:${reloadKey}`}
                   initialMarkdown={activeNote.contentMarkdown}
                   onChange={(md) => patchActive({ contentMarkdown: md })}
                 />

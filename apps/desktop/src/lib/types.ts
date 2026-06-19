@@ -23,3 +23,24 @@ export interface NoteUpdate {
   languageMode?: string;
   lastCursorPosition?: number;
 }
+
+export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export interface Job {
+  id: string;
+  jobType: string;
+  status: JobStatus;
+  noteId: string | null;
+  progress: number;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+// Backend event bus payloads (tagged by `type`); see exoquill-core::events.
+export type BackendEvent =
+  | { type: "job_updated"; job: Job }
+  | { type: "job_progress"; id: string; progress: number }
+  | { type: "notes_changed" }
+  | { type: "error"; message: string };

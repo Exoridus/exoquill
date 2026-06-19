@@ -1,15 +1,20 @@
 //! Tauri commands for the notes core. Thin wrappers that lock the database and
 //! map persistence errors to strings for the IPC bridge.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use exoquill_ai::formatter::FormatterProvider;
 use exoquill_core::note::{NewNote, Note, NoteSource, NoteUpdate};
+use exoquill_core::JobQueue;
 use exoquill_db::Database;
 use tauri::State;
 
 /// Application state shared across commands.
 pub struct AppState {
-    pub db: Mutex<Database>,
+    /// Shared so job tasks can persist results from the worker thread.
+    pub db: Arc<Mutex<Database>>,
+    pub jobs: JobQueue,
+    pub formatter: Arc<dyn FormatterProvider>,
 }
 
 type CommandResult<T> = Result<T, String>;

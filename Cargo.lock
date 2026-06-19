@@ -969,6 +969,7 @@ dependencies = [
 name = "exoquill-desktop"
 version = "0.1.0"
 dependencies = [
+ "exoquill-ai",
  "exoquill-core",
  "exoquill-db",
  "serde",

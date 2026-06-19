@@ -3,15 +3,17 @@ import { DictateIcon, FormatIcon, OcrIcon, ReadIcon, TrashIcon } from "./icons";
 const SOON = "Coming in a later milestone";
 
 interface Props {
+  onFormat: () => void;
   onDelete: () => void;
+  formatting: boolean;
 }
 
 /**
- * The four core actions plus delete. The capture/AI actions are visible but
- * disabled until their backends land (OCR PR 3, Format PR 4, Dictate PR 5,
- * Read PR 6).
+ * The four core actions plus delete. Format runs through the job queue (mock
+ * provider for now); Dictate/OCR/Read are disabled until their backends land
+ * (OCR PR 3, Dictate PR 5, Read PR 6).
  */
-export function ActionBar({ onDelete }: Props) {
+export function ActionBar({ onFormat, onDelete, formatting }: Props) {
   return (
     <div className="actionbar">
       <button className="action-btn action-btn--primary" disabled title={SOON}>
@@ -22,9 +24,14 @@ export function ActionBar({ onDelete }: Props) {
         <OcrIcon size={14} />
         OCR
       </button>
-      <button className="action-btn" disabled title={SOON}>
+      <button
+        className="action-btn"
+        onClick={onFormat}
+        disabled={formatting}
+        title="Quick-format this note (mock provider)"
+      >
         <FormatIcon size={14} />
-        Format
+        {formatting ? "Formatting…" : "Format"}
       </button>
       <button className="action-btn" disabled title={SOON}>
         <ReadIcon size={14} />
