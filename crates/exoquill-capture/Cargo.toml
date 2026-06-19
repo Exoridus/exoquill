@@ -8,3 +8,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+# Only PNG/JPEG codecs are needed for OCR intake; disable default features to
+# avoid pulling in heavy codecs (avif/rav1e, exr, webp, ...) and speed up builds.
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
