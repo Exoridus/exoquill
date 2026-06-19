@@ -45,6 +45,9 @@ export default function App() {
   const editorRef = useRef<TiptapEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dictationRef = useRef<DictationSession | null>(null);
+  // Guards against re-entering the async start/stop (e.g. a double-click would
+  // otherwise open a second mic session and leak the first).
+  const dictationBusy = useRef(false);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -206,32 +209,38 @@ export default function App() {
   // transcribed locally by Whisper; each finalized segment is inserted at the
   // cursor. Starting without an active note auto-creates a dictation note.
   const toggleDictation = useCallback(async () => {
-    if (dictating) {
-      const session = dictationRef.current;
-      dictationRef.current = null;
-      setDictating(false);
-      await session?.stop();
-      return;
-    }
-    if (!activeId) {
-      const note = await api.createNote("", "dictation");
-      setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)]));
-      setActiveId(note.id);
-    }
+    if (dictationBusy.current) return;
+    dictationBusy.current = true;
     try {
-      const session = await startDictation({
-        languageMode: activeNote?.languageMode,
-        onText: (text) => {
-          const editor = editorRef.current;
-          if (editor) insertAtCursor(editor, text);
-        },
-        onError: (message) => console.error("dictation:", message),
-      });
-      dictationRef.current = session;
-      setDictating(true);
-    } catch (err) {
-      console.error("could not start dictation:", err);
-      setDictating(false);
+      if (dictating) {
+        const session = dictationRef.current;
+        dictationRef.current = null;
+        setDictating(false);
+        await session?.stop();
+        return;
+      }
+      if (!activeId) {
+        const note = await api.createNote("", "dictation");
+        setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)]));
+        setActiveId(note.id);
+      }
+      try {
+        const session = await startDictation({
+          languageMode: activeNote?.languageMode,
+          onText: (text) => {
+            const editor = editorRef.current;
+            if (editor) insertAtCursor(editor, text);
+          },
+          onError: (message) => console.error("dictation:", message),
+        });
+        dictationRef.current = session;
+        setDictating(true);
+      } catch (err) {
+        console.error("could not start dictation:", err);
+        setDictating(false);
+      }
+    } finally {
+      dictationBusy.current = false;
     }
   }, [dictating, activeId, activeNote]);
 

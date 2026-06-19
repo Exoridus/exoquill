@@ -318,4 +318,71 @@ mod tests {
     fn whisper_is_object_safe() {
         let _s: Box<dyn SpeechToTextProvider> = Box::new(WhisperStt::new("whisper-cli", "m.bin"));
     }
+
+    /// Real end-to-end smoke test against the bundled whisper-cli + model.
+    /// Ignored by default (needs the runtimes); run it with, e.g.:
+    ///   $env:EXOQUILL_WHISPER=...\whisper-cli.exe
+    ///   $env:EXOQUILL_WHISPER_MODEL=...\ggml-base.bin
+    ///   $env:EXOQUILL_TEST_WAV=...\jfk.wav   # English 16 kHz mono sample
+    ///   cargo test -p exoquill-ai -- --ignored transcribes_real_wav --nocapture
+    #[test]
+    #[ignore = "requires the whisper runtime + a test WAV via env vars"]
+    fn transcribes_real_wav() {
+        let binary = std::env::var("EXOQUILL_WHISPER").expect("set EXOQUILL_WHISPER");
+        let model = std::env::var("EXOQUILL_WHISPER_MODEL").expect("set EXOQUILL_WHISPER_MODEL");
+        let wav = std::env::var("EXOQUILL_TEST_WAV").expect("set EXOQUILL_TEST_WAV");
+        let (samples, sample_rate) = read_wav_pcm16(&wav);
+
+        let stt = WhisperStt::new(binary, model);
+        assert!(
+            matches!(stt.health_check(), Health::Ready),
+            "whisper runtime is not ready"
+        );
+
+        let response = stt
+            .run(
+                SttRequest {
+                    samples,
+                    sample_rate,
+                    language_mode: "en".into(),
+                    custom_terms: Vec::new(),
+                },
+                &CancelToken::new(),
+            )
+            .expect("transcription failed");
+        eprintln!("transcript: {}", response.text);
+        assert!(!response.text.trim().is_empty(), "transcript was empty");
+    }
+
+    /// Minimal 16-bit PCM WAV reader for the smoke test: locates the `fmt ` and
+    /// `data` chunks and returns normalized mono samples + the sample rate.
+    fn read_wav_pcm16(path: &str) -> (Vec<f32>, u32) {
+        let bytes = std::fs::read(path).expect("read test wav");
+        let find = |tag: &[u8; 4]| {
+            bytes
+                .windows(4)
+                .position(|w| w == tag)
+                .unwrap_or_else(|| panic!("missing {:?} chunk", std::str::from_utf8(tag)))
+        };
+        let fmt = find(b"fmt ");
+        let sample_rate = u32::from_le_bytes([
+            bytes[fmt + 12],
+            bytes[fmt + 13],
+            bytes[fmt + 14],
+            bytes[fmt + 15],
+        ]);
+        let data = find(b"data");
+        let len = u32::from_le_bytes([
+            bytes[data + 4],
+            bytes[data + 5],
+            bytes[data + 6],
+            bytes[data + 7],
+        ]) as usize;
+        let start = data + 8;
+        let samples = bytes[start..start + len]
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+            .collect();
+        (samples, sample_rate)
+    }
 }
