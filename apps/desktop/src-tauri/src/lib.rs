@@ -1,5 +1,6 @@
 mod jobs;
 mod notes;
+mod tray;
 
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +11,8 @@ use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
 use notes::AppState;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 /// Returns the ExoQuill core crate version.
 #[tauri::command]
@@ -22,6 +24,16 @@ fn app_version() -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        tray::show_main(app);
+                        let _ = app.emit("quick-note", ());
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -38,6 +50,11 @@ pub fn run() {
                 formatter: Arc::new(MockFormatter) as Arc<dyn FormatterProvider>,
                 ocr: Arc::new(MockOcr) as Arc<dyn OcrProvider>,
             });
+
+            tray::setup_tray(app)?;
+            app.global_shortcut()
+                .register(tray::quick_note_shortcut())?;
+            tray::setup_close_to_tray(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

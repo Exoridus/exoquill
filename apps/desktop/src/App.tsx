@@ -190,6 +190,14 @@ export default function App() {
     speak(text, { onEnd: () => setReading(false) });
   }, [reading, activeNote]);
 
+  // Global Quick-Note shortcut (Ctrl+Alt+N) and tray "New Note" → create a note.
+  useEffect(() => {
+    const unlisten = listen("quick-note", () => void newNote());
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [newNote]);
+
   const triggerOcr = useCallback(() => fileInputRef.current?.click(), []);
 
   const handleOcrFile = useCallback(
