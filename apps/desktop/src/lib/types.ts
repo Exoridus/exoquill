@@ -38,6 +38,17 @@ export interface NoteEvent {
   createdAt: string;
 }
 
+/** Read-only summary of the provider behind an AI capability (settings/about). */
+export interface ModelInfo {
+  feature: string;
+  providerId: string;
+  displayName: string;
+  version: string;
+  status: string;
+  runtimeLicense: string;
+  source: string | null;
+}
+
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface Job {

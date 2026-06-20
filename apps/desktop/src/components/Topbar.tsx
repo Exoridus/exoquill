@@ -5,9 +5,10 @@ import { MoonIcon, SunIcon } from "./icons";
 interface Props {
   theme: Theme;
   onToggleTheme: () => void;
+  onShowModels: () => void;
 }
 
-export function Topbar({ theme, onToggleTheme }: Props) {
+export function Topbar({ theme, onToggleTheme, onShowModels }: Props) {
   return (
     <header className="topbar">
       <LogoMark />
@@ -17,6 +18,9 @@ export function Topbar({ theme, onToggleTheme }: Props) {
         <span className="on-device__dot" />
         ON-DEVICE
       </span>
+      <button className="action-btn" onClick={onShowModels} title="On-device models & licenses">
+        Models
+      </button>
       <button
         className="icon-btn"
         onClick={onToggleTheme}

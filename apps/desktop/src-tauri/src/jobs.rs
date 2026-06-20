@@ -6,6 +6,7 @@ use std::sync::Arc;
 use base64::Engine;
 use exoquill_ai::formatter::FormatRequest;
 use exoquill_ai::ocr::{OcrLayout, OcrRequest};
+use exoquill_ai::provider::{Health, Provider};
 use exoquill_ai::tts::{TtsRequest, TtsResponse};
 use exoquill_core::note::{NewNoteEvent, NoteUpdate};
 use exoquill_core::{CancelToken, Event, EventSink, Job};
@@ -302,4 +303,65 @@ pub fn tts_speak(state: State<AppState>, text: String) -> Result<TtsResponse, St
     };
     tts.run(request, &CancelToken::new())
         .map_err(|e| e.to_string())
+}
+
+/// Read-only summary of the provider behind an AI capability, for the settings /
+/// about view (D5: surface model + voice license/status without a full model
+/// manager yet).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub feature: String,
+    pub provider_id: String,
+    pub display_name: String,
+    pub version: String,
+    /// "ready" | "mock" | "missing_model" | "unavailable" | "fallback".
+    pub status: String,
+    pub runtime_license: String,
+    pub source: Option<String>,
+}
+
+fn describe<P: Provider + ?Sized>(feature: &str, provider: &P) -> ModelInfo {
+    let license = provider.license_info();
+    let status = if provider.id().contains("mock") {
+        "mock"
+    } else {
+        match provider.health_check() {
+            Health::Ready => "ready",
+            Health::MissingModel { .. } => "missing_model",
+            Health::Unavailable { .. } => "unavailable",
+        }
+    };
+    ModelInfo {
+        feature: feature.into(),
+        provider_id: provider.id().into(),
+        display_name: provider.display_name().into(),
+        version: provider.version().into(),
+        status: status.into(),
+        runtime_license: license.runtime_license,
+        source: license.source,
+    }
+}
+
+/// List the resolved AI providers with license + status for the settings view.
+#[tauri::command]
+pub fn list_model_info(state: State<AppState>) -> Vec<ModelInfo> {
+    let mut out = vec![
+        describe("stt", state.stt.as_ref()),
+        describe("ocr", state.ocr.as_ref()),
+        describe("formatter", state.formatter.as_ref()),
+    ];
+    match state.tts.as_ref() {
+        Some(tts) => out.push(describe("tts", tts.as_ref())),
+        None => out.push(ModelInfo {
+            feature: "tts".into(),
+            provider_id: "tts.system".into(),
+            display_name: "System speech (fallback)".into(),
+            version: "-".into(),
+            status: "fallback".into(),
+            runtime_license: "OS".into(),
+            source: None,
+        }),
+    }
+    out
 }

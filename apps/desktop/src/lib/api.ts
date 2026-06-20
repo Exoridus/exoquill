@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CaptureSource,
   Job,
+  ModelInfo,
   Note,
   NoteEvent,
   NoteSource,
@@ -141,4 +142,9 @@ export function listCaptureSources(): Promise<CaptureSource[]> {
 /** Synthesize speech via the local TTS provider; rejects if none is available. */
 export function ttsSpeak(text: string): Promise<TtsResponse> {
   return invoke<TtsResponse>("tts_speak", { text });
+}
+
+/** The resolved on-device AI providers with license + status (settings view). */
+export function listModelInfo(): Promise<ModelInfo[]> {
+  return invoke<ModelInfo[]>("list_model_info");
 }

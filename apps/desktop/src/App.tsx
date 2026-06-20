@@ -24,6 +24,7 @@ import { speak, stopSpeaking } from "./lib/speech";
 import type {
   BackendEvent,
   CaptureSource,
+  ModelInfo,
   Note,
   NoteEvent,
   NoteUpdate,
@@ -64,6 +65,8 @@ export default function App() {
   const [ocrBusy, setOcrBusy] = useState(false);
   // The open note-event history overlay (null = closed).
   const [history, setHistory] = useState<NoteEvent[] | null>(null);
+  // The open on-device models overlay (null = closed).
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
@@ -474,7 +477,11 @@ export default function App() {
         onChange={handleOcrFile}
         style={{ display: "none" }}
       />
-      <Topbar theme={theme} onToggleTheme={toggleTheme} />
+      <Topbar
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onShowModels={() => void api.listModelInfo().then(setModels)}
+      />
       <div className="body">
         <Sidebar
           notes={notes}
@@ -606,6 +613,30 @@ export default function App() {
                 ))}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+      {models && (
+        <div className="history-backdrop" onClick={() => setModels(null)}>
+          <div className="history-panel" onClick={(e) => e.stopPropagation()}>
+            <header className="history-panel__head">
+              <span>On-Device-Modelle</span>
+              <button className="icon-btn" onClick={() => setModels(null)} aria-label="Schließen">
+                ×
+              </button>
+            </header>
+            <ul className="history-panel__list">
+              {models.map((m) => (
+                <li key={m.feature} className="history-event">
+                  <span className="history-event__type">{m.feature}</span>
+                  <span className="model-info__name">{m.displayName}</span>
+                  <span className={`model-info__status model-info__status--${m.status}`}>
+                    {m.status}
+                  </span>
+                  <span className="history-event__provider">{m.runtimeLicense}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}

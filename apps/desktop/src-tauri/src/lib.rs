@@ -317,6 +317,7 @@ pub fn run() {
             jobs::cancel_region_ocr,
             jobs::format_text,
             jobs::tts_speak,
+            jobs::list_model_info,
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::list_capture_sources,

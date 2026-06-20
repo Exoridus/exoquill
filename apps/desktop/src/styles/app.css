@@ -352,6 +352,28 @@
   font-family: var(--font-mono, monospace);
   font-size: 11px;
 }
+.model-info__name {
+  color: var(--text-secondary);
+}
+.model-info__status {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.model-info__status--ready {
+  color: #4ade80;
+}
+.model-info__status--mock,
+.model-info__status--fallback {
+  color: #fbbf24;
+}
+.model-info__status--unavailable,
+.model-info__status--missing_model {
+  color: #f87171;
+}
 
 /* ---- Live dictation ---- */
 /* In-progress partial transcript shown at the caret while speaking. The settled
