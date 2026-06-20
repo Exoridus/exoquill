@@ -57,12 +57,16 @@ pub struct DictationController {
 
 /// Begin streaming dictation into the active note. No-op if already running.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn start_dictation(
     state: State<AppState>,
     app: AppHandle,
     device: Option<String>,
     language_mode: Option<String>,
     loopback: Option<bool>,
+    auto_gain: Option<bool>,
+    gain: Option<f32>,
+    use_silero: Option<bool>,
 ) -> Result<(), String> {
     let mut slot = state.dictation.lock().map_err(|e| e.to_string())?;
     if slot.is_some() {
@@ -70,13 +74,30 @@ pub fn start_dictation(
     }
     let language = language_mode.unwrap_or_else(|| "de_en_terms".into());
     let loopback = loopback.unwrap_or(false);
+    // Gain handling: mic + auto-gain → adaptive AGC (`None`); otherwise a fixed
+    // multiplier. Loopback (system audio) is already line level, so it never gets
+    // the AGC — only an optional manual trim.
+    let gain_mode = if auto_gain.unwrap_or(true) && !loopback {
+        None
+    } else {
+        Some(gain.unwrap_or(1.0))
+    };
+    let use_silero = use_silero.unwrap_or(true);
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
 
     // The worker resolves its STT provider itself (it may start the persistent
     // whisper-server, which can take a moment) so this command returns at once.
     let handle = std::thread::spawn(move || {
-        run(app, device, language, loopback, worker_stop);
+        run(
+            app,
+            device,
+            language,
+            loopback,
+            gain_mode,
+            use_silero,
+            worker_stop,
+        );
     });
     *slot = Some(DictationController { stop, handle });
     Ok(())
@@ -117,18 +138,21 @@ pub fn list_capture_sources() -> Vec<CaptureSource> {
 
 /// Worker loop: capture → segment → transcribe → emit. Runs on its own thread
 /// and owns the cpal stream (which is dropped when the loop ends).
+#[allow(clippy::too_many_arguments)]
 fn run(
     app: AppHandle,
     device: Option<String>,
     language: String,
     loopback: bool,
+    gain: Option<f32>,
+    use_silero: bool,
     stop: Arc<AtomicBool>,
 ) {
     // Start capture *before* resolving the STT provider so a cold whisper-server
     // start (model load + GPU init, several seconds) never swallows the opening
     // words. Frames captured during the warmup are segmented and queued, then
     // transcribed retroactively once the provider is ready.
-    let capture = match start_capture(device.as_deref(), loopback) {
+    let capture = match start_capture(device.as_deref(), loopback, gain) {
         Ok(capture) => capture,
         Err(error) => {
             let _ = app.emit("dictation_error", error);
@@ -158,16 +182,20 @@ fn run(
 
     let rate = capture.sample_rate;
     let mut segmenter = Segmenter::new(rate);
-    // With `--features silero` and the model resolved, swap in the Silero neural
-    // VAD; otherwise (or on a load failure, e.g. missing runtime) the energy gate
-    // above stays.
+    // With `--features silero`, `use_silero` set, and the model resolved, swap in
+    // the Silero neural VAD; otherwise (disabled, or a load failure such as a
+    // missing runtime) the energy gate above stays.
     #[cfg(feature = "silero")]
-    if let Some(model) = app.state::<AppState>().silero_model_path.clone() {
-        match exoquill_audio::SileroGate::new(&model) {
-            Ok(gate) => segmenter = Segmenter::with_gate(rate, Box::new(gate)),
-            Err(err) => eprintln!("Silero VAD unavailable ({err}); using energy gate"),
+    if use_silero {
+        if let Some(model) = app.state::<AppState>().silero_model_path.clone() {
+            match exoquill_audio::SileroGate::new(&model) {
+                Ok(gate) => segmenter = Segmenter::with_gate(rate, Box::new(gate)),
+                Err(err) => eprintln!("Silero VAD unavailable ({err}); using energy gate"),
+            }
         }
     }
+    #[cfg(not(feature = "silero"))]
+    let _ = use_silero; // only consulted by the silero feature
     let cancel = CancelToken::new();
     let mut last_level = Instant::now();
     let mut last_voice = Instant::now();

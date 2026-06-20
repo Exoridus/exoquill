@@ -109,11 +109,22 @@ export function startDictation(
   device?: string,
   languageMode?: string,
   loopback = false,
+  opts: {
+    /** `false` disables the adaptive AGC (use `gain` as a fixed multiplier). */
+    autoGain?: boolean;
+    /** Fixed gain multiplier when `autoGain` is off (1.0 = unchanged). */
+    gain?: number;
+    /** `false` forces the energy VAD even when the Silero model is available. */
+    useSilero?: boolean;
+  } = {},
 ): Promise<void> {
   return invoke("start_dictation", {
     device: device ?? null,
     languageMode: languageMode ?? null,
     loopback,
+    autoGain: opts.autoGain ?? null,
+    gain: opts.gain ?? null,
+    useSilero: opts.useSilero ?? null,
   });
 }
 

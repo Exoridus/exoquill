@@ -26,9 +26,15 @@ pub struct Capture {
 /// Start capturing from `device_name` (matched by name) or the default device
 /// when `None`. With `loopback`, the source is a *render* (output) device and
 /// cpal captures the system audio playing on it (WASAPI loopback); otherwise it
-/// is a microphone. The returned [`Capture`] must be kept alive and is owned by
-/// the worker thread that created it.
-pub fn start_capture(device_name: Option<&str>, loopback: bool) -> Result<Capture, String> {
+/// is a microphone. `gain` selects level handling: `None` runs the adaptive
+/// [`AutoGain`] (AGC), `Some(g)` applies a fixed multiplier (`Some(1.0)` = off).
+/// The returned [`Capture`] must be kept alive and is owned by the worker thread
+/// that created it.
+pub fn start_capture(
+    device_name: Option<&str>,
+    loopback: bool,
+    gain: Option<f32>,
+) -> Result<Capture, String> {
     let host = cpal::default_host();
     let (device, config) = if loopback {
         // Building an input stream on an output device transparently enables
@@ -68,18 +74,15 @@ pub fn start_capture(device_name: Option<&str>, loopback: bool) -> Result<Captur
     let channels = config.channels().max(1);
     let sample_format = config.sample_format();
     let stream_config: StreamConfig = config.into();
-    // Auto-gain microphones (level varies wildly per mic/distance); leave loopback
-    // (system audio) untouched since it's already at line level.
-    let auto_gain = !loopback;
 
     let (tx, rx) = channel::<Vec<f32>>();
     let stream = match sample_format {
-        SampleFormat::F32 => build::<f32>(&device, &stream_config, channels, auto_gain, tx),
-        SampleFormat::I16 => build::<i16>(&device, &stream_config, channels, auto_gain, tx),
-        SampleFormat::I32 => build::<i32>(&device, &stream_config, channels, auto_gain, tx),
-        SampleFormat::I8 => build::<i8>(&device, &stream_config, channels, auto_gain, tx),
-        SampleFormat::U8 => build::<u8>(&device, &stream_config, channels, auto_gain, tx),
-        SampleFormat::U16 => build::<u16>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::F32 => build::<f32>(&device, &stream_config, channels, gain, tx),
+        SampleFormat::I16 => build::<i16>(&device, &stream_config, channels, gain, tx),
+        SampleFormat::I32 => build::<i32>(&device, &stream_config, channels, gain, tx),
+        SampleFormat::I8 => build::<i8>(&device, &stream_config, channels, gain, tx),
+        SampleFormat::U8 => build::<u8>(&device, &stream_config, channels, gain, tx),
+        SampleFormat::U16 => build::<u16>(&device, &stream_config, channels, gain, tx),
         other => return Err(format!("unsupported input sample format: {other}")),
     }
     .map_err(|e| format!("build input stream: {e}"))?;
@@ -100,13 +103,14 @@ fn device_label(device: &Device) -> Option<String> {
 }
 
 /// Build a typed input stream that converts interleaved `T` frames to `f32`,
-/// downmixes them to mono with the channel-aware [`Downmixer`], optionally
-/// applies [`AutoGain`] (`auto_gain`), and forwards each buffer over `tx`.
+/// downmixes them to mono with the channel-aware [`Downmixer`], applies gain
+/// (`None` = adaptive [`AutoGain`], `Some(g)` = fixed multiplier), and forwards
+/// each buffer over `tx`.
 fn build<T>(
     device: &Device,
     config: &StreamConfig,
     channels: u16,
-    auto_gain: bool,
+    gain: Option<f32>,
     tx: Sender<Vec<f32>>,
 ) -> Result<Stream, cpal::Error>
 where
@@ -115,14 +119,20 @@ where
 {
     let channels = channels as usize;
     let mut downmixer = Downmixer::new(channels);
-    let mut gain = AutoGain::new();
+    let mut agc = AutoGain::new();
     device.build_input_stream::<T, _, _>(
         *config,
         move |data: &[T], _| {
             let interleaved: Vec<f32> = data.iter().copied().map(|s| f32::from_sample(s)).collect();
             let mut mono = downmixer.mix(&interleaved);
-            if auto_gain {
-                gain.process(&mut mono);
+            match gain {
+                None => agc.process(&mut mono),
+                Some(g) if g != 1.0 => {
+                    for s in mono.iter_mut() {
+                        *s = (*s * g).clamp(-1.0, 1.0);
+                    }
+                }
+                Some(_) => {} // unity gain: leave the signal untouched
             }
             // The receiver is gone only once the worker has stopped; ignore.
             let _ = tx.send(mono);
