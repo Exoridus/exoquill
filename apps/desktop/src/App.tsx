@@ -5,6 +5,7 @@ import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } f
 import { ActionBar } from "./components/ActionBar";
 import {
   Editor,
+  editorMarkdown,
   insertAtCursor,
   replaceRange,
   replaceSelection,
@@ -67,6 +68,12 @@ export default function App() {
   const [history, setHistory] = useState<NoteEvent[] | null>(null);
   // The open on-device models overlay (null = closed).
   const [models, setModels] = useState<ModelInfo[] | null>(null);
+  // The open formatting preview (original vs formatted), with its apply action.
+  const [preview, setPreview] = useState<{
+    original: string;
+    formatted: string;
+    onApply: () => void | Promise<void>;
+  } | null>(null);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
@@ -196,30 +203,39 @@ export default function App() {
     setActiveId(fallback?.id ?? null);
   }, [activeNote, notes]);
 
-  // Format the selection (direct replace + undo), or the whole note via the
-  // job queue when nothing is selected (decisions D6).
+  // Format the selection, or the whole note when nothing is selected, then open
+  // a preview (original vs formatted) so the change is applied only on confirm
+  // (D6 — replace + undo, now with a look-before-you-leap step).
   const formatActive = useCallback(async () => {
     const editor = editorRef.current;
+    if (!editor) return;
     const selection = selectionText(editor);
-    if (editor && selection.trim()) {
-      try {
-        const formatted = await api.formatText(selection);
-        replaceSelection(editor, formatted);
-      } catch (err) {
-        console.error("format selection failed:", err);
-      }
-      return;
-    }
-    if (!activeId) return;
+    const isSelection = !!selection.trim();
+    const original = isSelection ? selection : editorMarkdown(editor);
+    if (!original.trim()) return;
     setFormatting(true);
     try {
-      await flushSave();
-      await api.formatNote(activeId);
+      const formatted = await api.formatText(original);
+      setPreview({
+        original,
+        formatted,
+        onApply: async () => {
+          if (isSelection) {
+            replaceSelection(editor, formatted);
+            return;
+          }
+          if (!activeId) return;
+          await api.updateNote(activeId, { contentMarkdown: formatted });
+          await load(queryRef.current);
+          setReloadKey((k) => k + 1);
+        },
+      });
     } catch (err) {
-      setFormatting(false);
       console.error("format failed:", err);
+    } finally {
+      setFormatting(false);
     }
-  }, [activeId, flushSave]);
+  }, [activeId, load]);
 
   // Read the selection, or the whole note, aloud — toggling stop. Uses the
   // local Piper TTS when available, else the webview's system speech.
@@ -499,7 +515,9 @@ export default function App() {
                 onOcr={triggerOcr}
                 onFormat={() => void formatActive()}
                 onRead={() => void readActive()}
-                onExport={() => activeId && void api.exportNote(activeId)}
+                onExport={() =>
+                  activeId && void flushSave().then(() => api.exportNote(activeId))
+                }
                 onHistory={() =>
                   activeId && void api.listNoteEvents(activeId).then(setHistory)
                 }
@@ -637,6 +655,48 @@ export default function App() {
                 </li>
               ))}
             </ul>
+          </div>
+        </div>
+      )}
+      {preview && (
+        <div className="history-backdrop" onClick={() => setPreview(null)}>
+          <div
+            className="preview-panel"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Formatting preview"
+          >
+            <header className="history-panel__head">
+              <span>Formatierung – Vorschau</span>
+              <button className="icon-btn" onClick={() => setPreview(null)} aria-label="Schließen">
+                ×
+              </button>
+            </header>
+            <div className="preview-cols">
+              <div className="preview-col">
+                <span className="preview-col__label">Original</span>
+                <pre className="preview-col__text">{preview.original}</pre>
+              </div>
+              <div className="preview-col">
+                <span className="preview-col__label">Formatiert</span>
+                <pre className="preview-col__text">{preview.formatted}</pre>
+              </div>
+            </div>
+            <footer className="preview-actions">
+              <button className="action-btn" onClick={() => setPreview(null)}>
+                Abbrechen
+              </button>
+              <button
+                className="action-btn action-btn--primary"
+                onClick={async () => {
+                  const apply = preview.onApply;
+                  setPreview(null);
+                  await apply();
+                }}
+              >
+                Übernehmen
+              </button>
+            </footer>
           </div>
         </div>
       )}

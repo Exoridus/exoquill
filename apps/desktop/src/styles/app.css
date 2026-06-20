@@ -375,6 +375,56 @@
   color: #f87171;
 }
 
+/* ---- Formatting preview ---- */
+.preview-panel {
+  width: min(900px, 94vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated, #1b1b1f);
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.preview-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+.preview-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.preview-col__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.preview-col__text {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.03));
+  border-radius: 6px;
+}
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ---- Live dictation ---- */
 /* In-progress partial transcript shown at the caret while speaking. The settled
  * prefix reads calmly; the tentative tail is fainter since it may still change. */

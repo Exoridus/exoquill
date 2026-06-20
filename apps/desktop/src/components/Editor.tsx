@@ -39,6 +39,12 @@ export function Editor({ initialMarkdown, onChange, onReady }: Props) {
   return <EditorContent editor={editor} className="editor-body" />;
 }
 
+/** The editor's current content as Markdown (falls back to plain text). */
+export function editorMarkdown(editor: TiptapEditor): string {
+  const md = (editor.storage as { markdown?: { getMarkdown: () => string } }).markdown;
+  return md ? md.getMarkdown() : editor.getText();
+}
+
 /** Read the current selection as plain text, or "" if nothing is selected. */
 export function selectionText(editor: TiptapEditor | null): string {
   if (!editor) return "";
