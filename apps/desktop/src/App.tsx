@@ -19,9 +19,10 @@ import { Statusbar } from "./components/Statusbar";
 import { Topbar } from "./components/Topbar";
 import { useTheme } from "./hooks/useTheme";
 import * as api from "./lib/api";
-import { playSamples, stopPlayback } from "./lib/audio";
+import { stopPlayback } from "./lib/audio";
 import { startDictation, stopDictation, subscribeDictation } from "./lib/dictation";
-import { speak, stopSpeaking } from "./lib/speech";
+import { readAloud, type ReadAloudHandle } from "./lib/readaloud";
+import { stopSpeaking } from "./lib/speech";
 import type {
   BackendEvent,
   CaptureSource,
@@ -92,6 +93,8 @@ export default function App() {
   // overwritten as it grows; the final segment overwrites it authoritatively.
   // `null` between utterances.
   const utterance = useRef<{ from: number; prefix: string; committed: string } | null>(null);
+  // The running read-aloud queue, if any (so it can be stopped).
+  const readHandle = useRef<ReadAloudHandle | null>(null);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -115,6 +118,8 @@ export default function App() {
 
   // Stop any read-aloud when switching notes.
   useEffect(() => {
+    readHandle.current?.stop();
+    readHandle.current = null;
     stopSpeaking();
     stopPlayback();
     setReading(false);
@@ -237,12 +242,13 @@ export default function App() {
     }
   }, [activeId, load]);
 
-  // Read the selection, or the whole note, aloud — toggling stop. Uses the
-  // local Piper TTS when available, else the webview's system speech.
-  const readActive = useCallback(async () => {
+  // Read the selection, or the whole note, aloud — toggling stop. Streams via the
+  // read-aloud queue (sentence chunks, local Piper TTS with prefetch, system
+  // speech fallback) so playback starts on the first segment, not the whole note.
+  const readActive = useCallback(() => {
     if (reading) {
-      stopSpeaking();
-      stopPlayback();
+      readHandle.current?.stop();
+      readHandle.current = null;
       setReading(false);
       return;
     }
@@ -250,12 +256,10 @@ export default function App() {
     const text = selection.trim() ? selection : activeNote?.contentMarkdown ?? "";
     if (!text.trim()) return;
     setReading(true);
-    try {
-      const audio = await api.ttsSpeak(text);
-      playSamples(audio.samples, audio.sampleRate, () => setReading(false));
-    } catch {
-      speak(text, { onEnd: () => setReading(false) });
-    }
+    readHandle.current = readAloud(text, api.ttsSpeak, () => {
+      readHandle.current = null;
+      setReading(false);
+    });
   }, [reading, activeNote]);
 
   // Toggle microphone dictation. Captured audio is segmented in the webview and
