@@ -3,7 +3,14 @@ import { listen } from "@tauri-apps/api/event";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionBar } from "./components/ActionBar";
-import { Editor, insertAtCursor, replaceSelection, selectionText } from "./components/Editor";
+import {
+  Editor,
+  insertAtCursor,
+  replaceRange,
+  replaceSelection,
+  selectionText,
+  separatorBefore,
+} from "./components/Editor";
 import { OcrOverlay } from "./components/OcrOverlay";
 import { PlusIcon } from "./components/icons";
 import { Sidebar } from "./components/Sidebar";
@@ -69,6 +76,12 @@ export default function App() {
   // initial selection (first segment) then continue at the cursor, or "cursor"
   // (insert at the caret — also covers append-to-end when nothing was focused).
   const dictationMode = useRef<"replace" | "cursor">("cursor");
+  // The live-committed region of the current utterance: its document anchor, the
+  // separating-space prefix, and the text written so far. While speaking, the
+  // stabilized prefix is committed into the note (real text) and this region is
+  // overwritten as it grows; the final segment overwrites it authoritatively.
+  // `null` between utterances.
+  const utterance = useRef<{ from: number; prefix: string; committed: string } | null>(null);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -280,7 +293,13 @@ export default function App() {
         const editor = editorRef.current;
         if (!editor) return;
         editor.commands.clearDictationGhost();
-        if (dictationMode.current === "replace") {
+        const u = utterance.current;
+        if (u) {
+          // Overwrite the live-committed region with the authoritative final
+          // transcript (one undoable step), then continue after it.
+          replaceRange(editor, u.from, u.committed.length, u.prefix + text);
+          utterance.current = null;
+        } else if (dictationMode.current === "replace") {
           replaceSelection(editor, text);
           dictationMode.current = "cursor"; // further segments append at the caret
         } else {
@@ -289,15 +308,47 @@ export default function App() {
         editor.commands.scrollIntoView();
       },
       onPartial: (partial) => {
-        editorRef.current?.commands.setDictationGhost(partial.stable, partial.tail);
+        const editor = editorRef.current;
+        if (!editor) return;
+        let u = utterance.current;
+        if (!u) {
+          // Don't anchor an utterance until there's a stabilized word to commit.
+          if (!partial.stable) {
+            editor.commands.setDictationGhost("", partial.tail);
+            return;
+          }
+          if (dictationMode.current === "replace") {
+            const { from, to } = editor.state.selection;
+            replaceRange(editor, from, to - from, partial.stable);
+            u = { from, prefix: "", committed: partial.stable };
+            dictationMode.current = "cursor";
+          } else {
+            const from = editor.state.selection.to;
+            const prefix = separatorBefore(editor, from);
+            replaceRange(editor, from, 0, prefix + partial.stable);
+            u = { from, prefix, committed: prefix + partial.stable };
+          }
+          utterance.current = u;
+        } else {
+          // Grow / revise the committed prefix in place.
+          const next = u.prefix + partial.stable;
+          if (next !== u.committed) {
+            replaceRange(editor, u.from, u.committed.length, next);
+            u.committed = next;
+          }
+        }
+        // Only the still-tentative tail stays as ghost, after the committed text.
+        editor.commands.setDictationGhost("", partial.tail);
       },
       onLevel: setMicLevel,
       onError: setDictationError,
       onStarted: () => {
+        utterance.current = null;
         setDictating(true);
         setDictationError(null);
       },
       onStopped: () => {
+        utterance.current = null;
         setDictating(false);
         setMicLevel(0);
         editorRef.current?.commands.clearDictationGhost();

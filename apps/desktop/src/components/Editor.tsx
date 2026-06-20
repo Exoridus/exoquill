@@ -61,3 +61,23 @@ export function insertAtCursor(editor: TiptapEditor, text: string): void {
   const prefix = preceding && !/\s$/.test(preceding) ? " " : "";
   editor.chain().focus().insertContent(prefix + text).run();
 }
+
+/** A separating space before dictated text when the char before `pos` isn't
+ *  whitespace and `pos` isn't the document start. */
+export function separatorBefore(editor: TiptapEditor, pos: number): string {
+  const preceding = pos > 1 ? editor.state.doc.textBetween(pos - 1, pos, "\n") : "";
+  return preceding && !/\s$/.test(preceding) ? " " : "";
+}
+
+/** Replace the document range `[from, from+length)` with `text` as one step,
+ *  leaving the cursor after it. Used to live-commit the stabilized prefix of a
+ *  dictation partial, then to overwrite that region with the final transcript. */
+export function replaceRange(
+  editor: TiptapEditor,
+  from: number,
+  length: number,
+  text: string,
+): void {
+  const to = Math.min(from + length, editor.state.doc.content.size);
+  editor.chain().focus().insertContentAt({ from, to }, text).run();
+}
