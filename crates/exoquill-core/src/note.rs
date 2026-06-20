@@ -47,6 +47,39 @@ pub struct NewNote {
     pub language_mode: Option<String>,
 }
 
+/// A recorded note event: the audit trail and undo safety net for an operation
+/// that wrote into a note (formatting, OCR, dictation). `raw_text` keeps the
+/// pre-operation text (product spec D6). Sent to the frontend for the history
+/// view (camelCase over the IPC bridge).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteEvent {
+    pub id: String,
+    pub note_id: String,
+    pub source_type: String,
+    pub raw_text: Option<String>,
+    pub processed_text: Option<String>,
+    pub operation: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub model_version: Option<String>,
+    pub created_at: String,
+}
+
+/// Input for recording a [`NoteEvent`]; `id` and `created_at` are filled in by
+/// the persistence layer.
+#[derive(Debug, Clone, Default)]
+pub struct NewNoteEvent {
+    pub note_id: String,
+    pub source_type: String,
+    pub raw_text: Option<String>,
+    pub processed_text: Option<String>,
+    pub operation: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub model_version: Option<String>,
+}
+
 /// Partial update for a note. Only `Some` fields are written; `updated_at` is
 /// always bumped by the persistence layer.
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -7,7 +7,7 @@ use base64::Engine;
 use exoquill_ai::formatter::FormatRequest;
 use exoquill_ai::ocr::{OcrLayout, OcrRequest};
 use exoquill_ai::tts::{TtsRequest, TtsResponse};
-use exoquill_core::note::NoteUpdate;
+use exoquill_core::note::{NewNoteEvent, NoteUpdate};
 use exoquill_core::{CancelToken, Event, EventSink, Job};
 use tauri::{AppHandle, Emitter, State};
 
@@ -52,28 +52,41 @@ pub fn format_note(state: State<AppState>, note_id: String) -> Result<String, St
         Some(note_id),
         Box::new(move |handle| {
             handle.report_progress(0.2);
+            let original = note.content_markdown.clone();
             let request = FormatRequest {
-                text: note.content_markdown.clone(),
+                text: original.clone(),
                 source: "manual".into(),
                 language_mode: note.language_mode.clone(),
                 operation: "quick_format".into(),
                 instruction: None,
                 custom_terms: Vec::new(),
             };
+            let provider_id = formatter.id().to_string();
             let response = formatter
                 .run(request, handle.cancel_token())
                 .map_err(|e| e.to_string())?;
             handle.report_progress(0.8);
-            db.lock()
-                .map_err(|e| e.to_string())?
-                .update_note(
-                    &target_id,
-                    NoteUpdate {
-                        content_markdown: Some(response.formatted_text),
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| e.to_string())?;
+            let formatted = response.formatted_text;
+            let db = db.lock().map_err(|e| e.to_string())?;
+            db.update_note(
+                &target_id,
+                NoteUpdate {
+                    content_markdown: Some(formatted.clone()),
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| e.to_string())?;
+            // Record the operation (keeps the pre-format text as the undo safety
+            // net, D6). Best-effort — a history write must not fail the format.
+            let _ = db.insert_event(NewNoteEvent {
+                note_id: target_id.clone(),
+                source_type: "format".into(),
+                raw_text: Some(original),
+                processed_text: Some(formatted),
+                operation: Some("quick_format".into()),
+                provider_id: Some(provider_id),
+                ..Default::default()
+            });
             Ok(())
         }),
     );
@@ -118,25 +131,34 @@ pub fn run_ocr(
                 image_bytes,
                 languages: "deu+eng".into(),
             };
+            let provider_id = ocr.id().to_string();
             let response = ocr
                 .run(request, handle.cancel_token())
                 .map_err(|e| e.to_string())?;
             handle.report_progress(0.8);
+            let recognized = response.text;
             let mut content = note.content_markdown.clone();
             if !content.trim().is_empty() {
                 content.push_str("\n\n");
             }
-            content.push_str(&response.text);
-            db.lock()
-                .map_err(|e| e.to_string())?
-                .update_note(
-                    &target_id,
-                    NoteUpdate {
-                        content_markdown: Some(content),
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| e.to_string())?;
+            content.push_str(&recognized);
+            let db = db.lock().map_err(|e| e.to_string())?;
+            db.update_note(
+                &target_id,
+                NoteUpdate {
+                    content_markdown: Some(content),
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| e.to_string())?;
+            let _ = db.insert_event(NewNoteEvent {
+                note_id: target_id.clone(),
+                source_type: "ocr".into(),
+                processed_text: Some(recognized),
+                operation: Some("ocr".into()),
+                provider_id: Some(provider_id),
+                ..Default::default()
+            });
             Ok(())
         }),
     );

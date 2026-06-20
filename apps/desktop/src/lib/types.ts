@@ -24,6 +24,20 @@ export interface NoteUpdate {
   lastCursorPosition?: number;
 }
 
+/** A recorded note event (format/OCR history + undo safety net). */
+export interface NoteEvent {
+  id: string;
+  noteId: string;
+  sourceType: string;
+  rawText: string | null;
+  processedText: string | null;
+  operation: string | null;
+  providerId: string | null;
+  modelId: string | null;
+  modelVersion: string | null;
+  createdAt: string;
+}
+
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface Job {

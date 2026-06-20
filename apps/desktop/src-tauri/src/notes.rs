@@ -8,10 +8,11 @@ use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::ocr::OcrProvider;
 use exoquill_ai::stt::SpeechToTextProvider;
 use exoquill_ai::tts::TextToSpeechProvider;
-use exoquill_core::note::{NewNote, Note, NoteSource, NoteUpdate};
+use exoquill_core::note::{NewNote, Note, NoteEvent, NoteSource, NoteUpdate};
 use exoquill_core::JobQueue;
 use exoquill_db::Database;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// Application state shared across commands.
 pub struct AppState {
@@ -102,4 +103,56 @@ pub fn resolve_target_note(state: State<AppState>, active: Option<String>) -> Co
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.resolve_target_note(active.as_deref())
         .map_err(|e| e.to_string())
+}
+
+/// The recorded events for a note (formatting/OCR history + undo safety net),
+/// most recent first.
+#[tauri::command]
+pub fn list_note_events(state: State<AppState>, note_id: String) -> CommandResult<Vec<NoteEvent>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.list_events(&note_id).map_err(|e| e.to_string())
+}
+
+/// Export a note's Markdown to a file the user picks (native save dialog).
+/// Returns the saved path, or `None` if the user cancelled. Notes are stored as
+/// Markdown, so this writes `content_markdown` verbatim.
+#[tauri::command]
+pub fn export_note(
+    state: State<AppState>,
+    app: AppHandle,
+    id: String,
+) -> CommandResult<Option<String>> {
+    let note = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.get_note(&id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "note not found".to_string())?
+    };
+    let suggested = format!("{}.md", sanitize_filename(&note.title));
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md"])
+        .set_file_name(&suggested)
+        .blocking_save_file()
+    else {
+        return Ok(None); // user cancelled
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, note.content_markdown.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Make a note title safe to use as a file name (replace path-hostile chars).
+fn sanitize_filename(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').trim();
+    if trimmed.is_empty() {
+        "note".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }

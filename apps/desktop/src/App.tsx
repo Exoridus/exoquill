@@ -14,7 +14,15 @@ import * as api from "./lib/api";
 import { playSamples, stopPlayback } from "./lib/audio";
 import { startDictation, stopDictation, subscribeDictation } from "./lib/dictation";
 import { speak, stopSpeaking } from "./lib/speech";
-import type { BackendEvent, CaptureSource, Note, NoteUpdate, OcrLayout, RegionOcr } from "./lib/types";
+import type {
+  BackendEvent,
+  CaptureSource,
+  Note,
+  NoteEvent,
+  NoteUpdate,
+  OcrLayout,
+  RegionOcr,
+} from "./lib/types";
 import "./styles/app.css";
 
 function sortNotes(notes: Note[]): Note[] {
@@ -47,6 +55,8 @@ export default function App() {
   // The open OCR result overlay (pasted/picked image), and whether OCR is running.
   const [ocr, setOcr] = useState<{ url: string; layout: OcrLayout } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+  // The open note-event history overlay (null = closed).
+  const [history, setHistory] = useState<NoteEvent[] | null>(null);
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
@@ -431,6 +441,10 @@ export default function App() {
                 onOcr={triggerOcr}
                 onFormat={() => void formatActive()}
                 onRead={() => void readActive()}
+                onExport={() => activeId && void api.exportNote(activeId)}
+                onHistory={() =>
+                  activeId && void api.listNoteEvents(activeId).then(setHistory)
+                }
                 onDelete={() => void deleteActive()}
                 dictating={dictating}
                 formatting={formatting}
@@ -514,6 +528,35 @@ export default function App() {
           onInsert={(text) => void insertOcrText(text)}
           onClose={closeOcr}
         />
+      )}
+      {history && (
+        <div className="history-backdrop" onClick={() => setHistory(null)}>
+          <div className="history-panel" onClick={(e) => e.stopPropagation()}>
+            <header className="history-panel__head">
+              <span>Verlauf</span>
+              <button className="icon-btn" onClick={() => setHistory(null)} aria-label="Schließen">
+                ×
+              </button>
+            </header>
+            {history.length === 0 ? (
+              <p className="history-panel__empty">Noch keine Ereignisse.</p>
+            ) : (
+              <ul className="history-panel__list">
+                {history.map((ev) => (
+                  <li key={ev.id} className="history-event">
+                    <span className="history-event__type">{ev.operation ?? ev.sourceType}</span>
+                    <time className="history-event__time">
+                      {new Date(ev.createdAt).toLocaleString()}
+                    </time>
+                    {ev.providerId && (
+                      <span className="history-event__provider">{ev.providerId}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

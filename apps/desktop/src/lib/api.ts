@@ -5,6 +5,7 @@ import type {
   CaptureSource,
   Job,
   Note,
+  NoteEvent,
   NoteSource,
   NoteUpdate,
   OcrLayout,
@@ -39,6 +40,17 @@ export function deleteNote(id: string): Promise<boolean> {
 
 export function searchNotes(query: string): Promise<Note[]> {
   return invoke<Note[]>("search_notes", { query });
+}
+
+/** The recorded events for a note (format/OCR history), most recent first. */
+export function listNoteEvents(noteId: string): Promise<NoteEvent[]> {
+  return invoke<NoteEvent[]>("list_note_events", { noteId });
+}
+
+/** Export a note's Markdown via a native save dialog. Resolves to the saved
+ *  path, or `null` if the user cancelled. */
+export function exportNote(id: string): Promise<string | null> {
+  return invoke<string | null>("export_note", { id });
 }
 
 /** Quick-format the whole note as an async job; resolves to the job id. */

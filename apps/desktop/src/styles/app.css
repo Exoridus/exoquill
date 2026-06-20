@@ -293,6 +293,66 @@
   color: var(--text-secondary);
 }
 
+/* ---- Note event history ---- */
+.history-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.history-panel {
+  width: min(520px, 90vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-elevated, #1b1b1f);
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.history-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.history-panel__empty {
+  color: var(--text-secondary);
+}
+.history-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-event {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.03));
+  font-size: 13px;
+}
+.history-event__type {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.history-event__time {
+  color: var(--text-secondary);
+}
+.history-event__provider {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
 /* ---- Live dictation ---- */
 /* In-progress partial transcript shown at the caret while speaking. The settled
  * prefix reads calmly; the tentative tail is fainter since it may still change. */

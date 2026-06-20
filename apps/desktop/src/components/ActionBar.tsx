@@ -5,6 +5,8 @@ interface Props {
   onOcr: () => void;
   onFormat: () => void;
   onRead: () => void;
+  onExport: () => void;
+  onHistory: () => void;
   onDelete: () => void;
   dictating: boolean;
   formatting: boolean;
@@ -20,6 +22,8 @@ export function ActionBar({
   onOcr,
   onFormat,
   onRead,
+  onExport,
+  onHistory,
   onDelete,
   dictating,
   formatting,
@@ -56,6 +60,12 @@ export function ActionBar({
       >
         <ReadIcon size={14} />
         {reading ? "Stop" : "Read"}
+      </button>
+      <button className="action-btn" onClick={onExport} title="Export this note as Markdown">
+        Export
+      </button>
+      <button className="action-btn" onClick={onHistory} title="Show this note's event history">
+        History
       </button>
       <span className="actionbar__badge">MD</span>
       <button className="icon-btn" onClick={onDelete} title="Delete note" aria-label="Delete note">

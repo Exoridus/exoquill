@@ -5,7 +5,8 @@
 
 use exoquill_core::clock::{now_rfc3339, title_timestamp};
 use exoquill_core::note::{
-    generate_title, new_note_id, NewNote, Note, NoteUpdate, DEFAULT_LANGUAGE_MODE,
+    generate_title, new_note_id, NewNote, NewNoteEvent, Note, NoteEvent, NoteUpdate,
+    DEFAULT_LANGUAGE_MODE,
 };
 use rusqlite::{params, Connection, OptionalExtension, Result, Row};
 
@@ -235,6 +236,56 @@ impl Database {
         self.create_note(NewNote::default())
     }
 
+    /// Record a note event (audit trail / undo safety net). Returns the stored
+    /// event with its generated id and timestamp.
+    pub fn insert_event(&self, new: NewNoteEvent) -> Result<NoteEvent> {
+        let event = NoteEvent {
+            id: new_note_id(),
+            note_id: new.note_id,
+            source_type: new.source_type,
+            raw_text: new.raw_text,
+            processed_text: new.processed_text,
+            operation: new.operation,
+            provider_id: new.provider_id,
+            model_id: new.model_id,
+            model_version: new.model_version,
+            created_at: now_rfc3339(),
+        };
+        self.conn.execute(
+            "INSERT INTO note_events \
+             (id, note_id, source_type, raw_text, processed_text, operation, provider_id, \
+              model_id, model_version, confidence_json, metadata_json, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL, NULL, ?10)",
+            params![
+                event.id,
+                event.note_id,
+                event.source_type,
+                event.raw_text,
+                event.processed_text,
+                event.operation,
+                event.provider_id,
+                event.model_id,
+                event.model_version,
+                event.created_at,
+            ],
+        )?;
+        Ok(event)
+    }
+
+    /// List a note's recorded events, most recent first. Ties on `created_at`
+    /// (same-millisecond inserts) break by `rowid`, i.e. insertion order.
+    pub fn list_events(&self, note_id: &str) -> Result<Vec<NoteEvent>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, note_id, source_type, raw_text, processed_text, operation, provider_id, \
+             model_id, model_version, created_at \
+             FROM note_events WHERE note_id = ?1 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let events = stmt
+            .query_map(params![note_id], row_to_event)?
+            .collect::<Result<Vec<_>>>()?;
+        Ok(events)
+    }
+
     /// Read a setting value (raw JSON string).
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         self.conn
@@ -269,6 +320,21 @@ fn row_to_note(row: &Row) -> Result<Note> {
         deleted_at: row.get("deleted_at")?,
         language_mode: row.get("language_mode")?,
         last_cursor_position: row.get("last_cursor_position")?,
+    })
+}
+
+fn row_to_event(row: &Row) -> Result<NoteEvent> {
+    Ok(NoteEvent {
+        id: row.get("id")?,
+        note_id: row.get("note_id")?,
+        source_type: row.get("source_type")?,
+        raw_text: row.get("raw_text")?,
+        processed_text: row.get("processed_text")?,
+        operation: row.get("operation")?,
+        provider_id: row.get("provider_id")?,
+        model_id: row.get("model_id")?,
+        model_version: row.get("model_version")?,
+        created_at: row.get("created_at")?,
     })
 }
 
@@ -384,6 +450,37 @@ mod tests {
         db.delete_note(&fresh.id).unwrap();
         let replacement = db.resolve_target_note(Some(&fresh.id)).unwrap();
         assert_ne!(replacement.id, fresh.id);
+    }
+
+    #[test]
+    fn events_record_and_list_most_recent_first() {
+        use exoquill_core::note::NewNoteEvent;
+        let db = Database::open_in_memory().unwrap();
+        let n = db.create_note(note("draft")).unwrap();
+        db.insert_event(NewNoteEvent {
+            note_id: n.id.clone(),
+            source_type: "format".into(),
+            raw_text: Some("draft".into()),
+            processed_text: Some("Draft.".into()),
+            operation: Some("quick_format".into()),
+            provider_id: Some("formatter.mock".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        db.insert_event(NewNoteEvent {
+            note_id: n.id.clone(),
+            source_type: "ocr".into(),
+            processed_text: Some("scanned".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let events = db.list_events(&n.id).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].source_type, "ocr"); // most recent first
+        assert_eq!(events[1].raw_text.as_deref(), Some("draft"));
+        // A note with no events lists empty.
+        let other = db.create_note(note("x")).unwrap();
+        assert!(db.list_events(&other.id).unwrap().is_empty());
     }
 
     #[test]

@@ -242,6 +242,7 @@ fn start_region_ocr(app: &AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -304,6 +305,8 @@ pub fn run() {
             notes::list_notes,
             notes::search_notes,
             notes::resolve_target_note,
+            notes::list_note_events,
+            notes::export_note,
             jobs::format_note,
             jobs::cancel_job,
             jobs::list_jobs,
