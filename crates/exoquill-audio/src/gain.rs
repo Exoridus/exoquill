@@ -61,9 +61,9 @@ impl Downmixer {
                 sq[c] += s * s;
             }
         }
-        for c in 0..ch {
-            let rms = (sq[c] / frames as f32).sqrt();
-            self.energy[c] = self.energy[c] * (1.0 - ENERGY_ADAPT) + rms * ENERGY_ADAPT;
+        for (energy, &channel_sq) in self.energy.iter_mut().zip(&sq) {
+            let rms = (channel_sq / frames as f32).sqrt();
+            *energy = *energy * (1.0 - ENERGY_ADAPT) + rms * ENERGY_ADAPT;
         }
 
         // Active = above the absolute floor and a fraction of the loudest channel.
@@ -203,7 +203,11 @@ mod tests {
         // Only the left channel is active, so the mono level equals it (~0.3),
         // not the halved 0.15 a naive average would give.
         assert_eq!(dm.active_channels(), vec![0]);
-        assert!((peak_level(&last) - 0.3).abs() < 1e-3, "peak was {}", peak_level(&last));
+        assert!(
+            (peak_level(&last) - 0.3).abs() < 1e-3,
+            "peak was {}",
+            peak_level(&last)
+        );
     }
 
     #[test]
@@ -248,7 +252,11 @@ mod tests {
             agc.process(&mut buf);
             assert!(buf.iter().all(|&s| s.abs() <= 1.0), "clipped at buffer {n}");
         }
-        assert!(agc.gain() < 1.0, "hot signal should be attenuated, gain {}", agc.gain());
+        assert!(
+            agc.gain() < 1.0,
+            "hot signal should be attenuated, gain {}",
+            agc.gain()
+        );
     }
 
     #[test]
@@ -259,6 +267,10 @@ mod tests {
             agc.process(&mut buf);
         }
         // Sub-gate noise must not be pumped up toward the target.
-        assert!((agc.gain() - 1.0).abs() < 1e-3, "noise lifted gain to {}", agc.gain());
+        assert!(
+            (agc.gain() - 1.0).abs() < 1e-3,
+            "noise lifted gain to {}",
+            agc.gain()
+        );
     }
 }

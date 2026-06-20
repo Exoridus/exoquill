@@ -223,19 +223,16 @@ fn start_region_ocr(app: &AppHandle) {
             *slot = Some(shot);
         }
     }
-    if let Err(error) = WebviewWindowBuilder::new(
-        app,
-        "region-overlay",
-        WebviewUrl::App("index.html".into()),
-    )
-    .position(x, y)
-    .inner_size(w, h)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(false)
-    .focused(true)
-    .build()
+    if let Err(error) =
+        WebviewWindowBuilder::new(app, "region-overlay", WebviewUrl::App("index.html".into()))
+            .position(x, y)
+            .inner_size(w, h)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(true)
+            .build()
     {
         let _ = app.emit("region-ocr-error", error.to_string());
     }

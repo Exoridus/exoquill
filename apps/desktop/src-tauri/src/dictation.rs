@@ -438,7 +438,7 @@ mod tests {
         let mut s = PartialStabilizer::default();
         s.push("der");
         s.push("der hund"); // "der" is now agreed twice → committed.
-        // A later partial reinterprets the first word, but it's already frozen.
+                            // A later partial reinterprets the first word, but it's already frozen.
         let p = s.push("den hund bellt");
         assert_eq!((p.stable.as_str(), p.tail.as_str()), ("der", "hund bellt"));
     }

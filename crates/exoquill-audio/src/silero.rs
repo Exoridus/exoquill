@@ -156,7 +156,10 @@ mod tests {
         // scalar `sr`, and the input/output names are all correct) and yield a
         // low speech probability.
         let p_silence = gate.infer(&[0.0_f32; WINDOW]).expect("inference failed");
-        assert!((0.0..=1.0).contains(&p_silence), "prob out of range: {p_silence}");
+        assert!(
+            (0.0..=1.0).contains(&p_silence),
+            "prob out of range: {p_silence}"
+        );
         assert!(p_silence < 0.5, "silence scored as speech: {p_silence}");
 
         // A non-silent window must also run and stay in range (state carried over).

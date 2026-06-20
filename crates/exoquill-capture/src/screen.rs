@@ -27,7 +27,9 @@ pub struct ScreenShot {
 /// Capture the monitor containing the physical point `(x, y)` (e.g. the cursor).
 pub fn capture_at_point(x: i32, y: i32) -> Result<ScreenShot, String> {
     let monitor = Monitor::from_point(x, y).map_err(|e| format!("find monitor: {e}"))?;
-    let scale = monitor.scale_factor().map_err(|e| format!("scale factor: {e}"))?;
+    let scale = monitor
+        .scale_factor()
+        .map_err(|e| format!("scale factor: {e}"))?;
     let mx = monitor.x().map_err(|e| format!("monitor x: {e}"))?;
     let my = monitor.y().map_err(|e| format!("monitor y: {e}"))?;
 
@@ -61,7 +63,13 @@ impl ScreenShot {
     /// (relative to the monitor's top-left) and return it as PNG bytes. Maps
     /// logical → physical pixels via the DPI [`scale`](Self::scale) and clamps to
     /// the image bounds. `Ok(None)` if the selection is empty or off-screen.
-    pub fn crop_png(&self, x: f64, y: f64, width: f64, height: f64) -> Result<Option<Vec<u8>>, String> {
+    pub fn crop_png(
+        &self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<Option<Vec<u8>>, String> {
         let s = self.scale as f64;
         let px = (x * s).round().max(0.0) as u32;
         let py = (y * s).round().max(0.0) as u32;
