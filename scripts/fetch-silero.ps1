@@ -5,8 +5,10 @@
 #
 #   pwsh scripts/fetch-silero.ps1
 #
-# Then build with the feature enabled, e.g.:
-#   pnpm tauri build -- --features silero
+# Then build with the feature enabled. For a release that *bundles* these assets,
+# merge the Silero config overlay so they ship in the app's resource dir:
+#   pnpm tauri build --features silero --config src-tauri/tauri.silero.conf.json
+# For a plain feature build (dev/runtime resolves the assets via env, see dev.ps1):
 #   cargo build -p exoquill-desktop --features silero
 #
 # The ONNX Runtime version must match the ABI `ort` was built against: the pinned
@@ -52,4 +54,4 @@ if ($Force -or -not (Test-Path $dllPath)) {
     Write-Host "ONNX Runtime already present: $dllPath"
 }
 
-Write-Host "Done. Build dictation with the neural VAD via a --features silero build."
+Write-Host "Done. Bundle a release with: pnpm tauri build --features silero --config src-tauri/tauri.silero.conf.json"
