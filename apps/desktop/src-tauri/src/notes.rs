@@ -38,6 +38,10 @@ pub struct AppState {
     /// The frozen screenshot for an in-progress region-OCR selection (set when
     /// the overlay opens, drained when the user selects a region or cancels).
     pub region_capture: Mutex<Option<exoquill_capture::ScreenShot>>,
+    /// Path to the Silero VAD ONNX model, when built with the `silero` feature
+    /// and the model is present. `None` falls dictation back to the energy gate.
+    #[cfg(feature = "silero")]
+    pub silero_model_path: Option<PathBuf>,
 }
 
 type CommandResult<T> = Result<T, String>;

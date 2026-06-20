@@ -158,6 +158,16 @@ fn run(
 
     let rate = capture.sample_rate;
     let mut segmenter = Segmenter::new(rate);
+    // With `--features silero` and the model resolved, swap in the Silero neural
+    // VAD; otherwise (or on a load failure, e.g. missing runtime) the energy gate
+    // above stays.
+    #[cfg(feature = "silero")]
+    if let Some(model) = app.state::<AppState>().silero_model_path.clone() {
+        match exoquill_audio::SileroGate::new(&model) {
+            Ok(gate) => segmenter = Segmenter::with_gate(rate, Box::new(gate)),
+            Err(err) => eprintln!("Silero VAD unavailable ({err}); using energy gate"),
+        }
+    }
     let cancel = CancelToken::new();
     let mut last_level = Instant::now();
     let mut last_voice = Instant::now();
@@ -166,6 +176,8 @@ fn run(
     // once it lands so the start of the session survives a cold server start.
     let mut pending: Vec<Vec<f32>> = Vec::new();
     let mut stt: Option<ResolvedStt> = None;
+    // Stabilizes the live partial of the current utterance (reset on finalize).
+    let mut stabilizer = PartialStabilizer::default();
 
     while !stop.load(Ordering::Relaxed) {
         // Adopt the provider as soon as the warmup finishes, flushing the backlog
@@ -188,6 +200,9 @@ fn run(
                         }
                         None => pending.push(utterance),
                     }
+                    // The utterance is done; its partials shouldn't bleed into the
+                    // next one's stable prefix.
+                    stabilizer.reset();
                 }
                 if segmenter.is_active() {
                     last_voice = Instant::now();
@@ -205,7 +220,15 @@ fn run(
         // Inline (blocking) is fine — the call is ~100 ms and frames just queue.
         if let Some((provider, true)) = stt.as_ref() {
             if segmenter.is_active() && last_partial.elapsed() >= PARTIAL_INTERVAL {
-                emit_partial(&app, provider, &language, rate, segmenter.utterance(), &cancel);
+                emit_partial(
+                    &app,
+                    provider,
+                    &language,
+                    rate,
+                    segmenter.utterance(),
+                    &cancel,
+                    &mut stabilizer,
+                );
                 last_partial = Instant::now();
             }
         }
@@ -222,6 +245,7 @@ fn run(
             Some((provider, _)) => transcribe(&app, provider, &language, rate, utterance, &cancel),
             None => pending.push(utterance),
         }
+        stabilizer.reset();
     }
     // If the provider never landed but we have queued audio, wait for the warmup
     // so the opening words aren't dropped. With nothing queued, let it finish in
@@ -283,8 +307,65 @@ fn transcribe(
     }
 }
 
+/// A live partial transcript split into a frozen prefix and a tentative tail by
+/// [`PartialStabilizer`]. Serialized to the `dictation_partial` event; the UI
+/// renders `stable` calmly and only lets `tail` flicker.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PartialTranscript {
+    /// Words confirmed by two consecutive partials — frozen, won't change.
+    stable: String,
+    /// The still-tentative tail that may still be revised by later partials.
+    tail: String,
+}
+
+/// Reduces ghost-text flicker by only revising the unstable tail of a live
+/// partial (LocalAgreement-2): a word becomes permanently *committed* once two
+/// consecutive partials agree on it, since whisper rarely changes a word it has
+/// emitted identically twice as more audio arrives. Reset between utterances.
+#[derive(Default)]
+struct PartialStabilizer {
+    /// The previous partial's words, to diff the next one against.
+    prev: Vec<String>,
+    /// Frozen prefix: words agreed by two consecutive partials. Only grows.
+    committed: Vec<String>,
+}
+
+impl PartialStabilizer {
+    /// Feed the newest full partial transcript; returns the committed prefix and
+    /// the still-tentative tail.
+    fn push(&mut self, text: &str) -> PartialTranscript {
+        let words: Vec<String> = text.split_whitespace().map(str::to_owned).collect();
+        // Leading words this partial shares with the previous one are agreed and
+        // become committed (committed only grows, so a later reinterpretation of
+        // a frozen word is ignored — the first agreement wins).
+        let agreed = words
+            .iter()
+            .zip(&self.prev)
+            .take_while(|(a, b)| a == b)
+            .count();
+        while self.committed.len() < agreed {
+            self.committed.push(words[self.committed.len()].clone());
+        }
+        let split = self.committed.len().min(words.len());
+        let tail = words[split..].join(" ");
+        self.prev = words;
+        PartialTranscript {
+            stable: self.committed.join(" "),
+            tail,
+        }
+    }
+
+    /// Forget all state so the next utterance's partials start fresh.
+    fn reset(&mut self) {
+        self.prev.clear();
+        self.committed.clear();
+    }
+}
+
 /// Transcribe the in-progress utterance and emit it as a live partial transcript
 /// (the UI shows it as ghost text and replaces it when the segment finalizes).
+/// Stabilized via `stabilizer` so the already-settled prefix doesn't flicker.
 /// Best-effort: a transient failure is swallowed so it never interrupts capture.
 fn emit_partial(
     app: &AppHandle,
@@ -293,6 +374,7 @@ fn emit_partial(
     rate: u32,
     buffer: &[f32],
     cancel: &CancelToken,
+    stabilizer: &mut PartialStabilizer,
 ) {
     if buffer.is_empty() {
         return;
@@ -306,7 +388,7 @@ fn emit_partial(
     if let Ok(response) = stt.run(request, cancel) {
         let text = response.text.trim();
         if !text.is_empty() {
-            let _ = app.emit("dictation_partial", text.to_string());
+            let _ = app.emit("dictation_partial", stabilizer.push(text));
         }
     }
 }
@@ -334,4 +416,40 @@ fn ensure_stt(app: &AppHandle) -> (Arc<dyn SpeechToTextProvider>, bool) {
         }
     }
     (Arc::clone(&state.stt), false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PartialStabilizer;
+
+    #[test]
+    fn commits_words_agreed_by_two_partials() {
+        let mut s = PartialStabilizer::default();
+        let p = s.push("der");
+        assert_eq!((p.stable.as_str(), p.tail.as_str()), ("", "der"));
+        let p = s.push("der hund");
+        assert_eq!((p.stable.as_str(), p.tail.as_str()), ("der", "hund"));
+        let p = s.push("der hund bellt");
+        assert_eq!((p.stable.as_str(), p.tail.as_str()), ("der hund", "bellt"));
+    }
+
+    #[test]
+    fn committed_prefix_is_frozen_against_later_revision() {
+        let mut s = PartialStabilizer::default();
+        s.push("der");
+        s.push("der hund"); // "der" is now agreed twice → committed.
+        // A later partial reinterprets the first word, but it's already frozen.
+        let p = s.push("den hund bellt");
+        assert_eq!((p.stable.as_str(), p.tail.as_str()), ("der", "hund bellt"));
+    }
+
+    #[test]
+    fn reset_starts_the_next_utterance_fresh() {
+        let mut s = PartialStabilizer::default();
+        s.push("eins");
+        s.push("eins zwei");
+        s.reset();
+        let p = s.push("drei");
+        assert_eq!((p.stable.as_str(), p.tail.as_str()), ("", "drei"));
+    }
 }

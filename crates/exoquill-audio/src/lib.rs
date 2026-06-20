@@ -9,10 +9,16 @@
 //! feed whisper.cpp (which is fixed at 16 kHz mono).
 
 pub mod capture;
+pub mod gain;
 pub mod segmenter;
+#[cfg(feature = "silero")]
+pub mod silero;
 
 pub use capture::{start_capture, Capture};
-pub use segmenter::Segmenter;
+pub use gain::{AutoGain, Downmixer};
+pub use segmenter::{EnergyGate, Segmenter, SpeechGate};
+#[cfg(feature = "silero")]
+pub use silero::SileroGate;
 
 use cpal::traits::{DeviceTrait, HostTrait};
 

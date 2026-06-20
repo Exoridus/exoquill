@@ -7,12 +7,68 @@
 //! live: short pieces of text land in the note as you speak.
 //!
 //! An adaptive noise floor keeps it working across microphones and rooms
-//! without a hand-tuned per-user threshold. This is deliberately a cheap energy
-//! VAD; a neural VAD (Silero) is a v0.2 improvement (see `docs/roadmap.md`).
+//! without a hand-tuned per-user threshold. The speech/non-speech decision is
+//! factored out behind [`SpeechGate`] so a neural VAD (Silero) can replace the
+//! cheap energy gate without touching the buffering logic here.
 
 use std::collections::VecDeque;
 
 use crate::rms_level;
+
+/// Decides, per captured frame, whether it contains speech — the pluggable front
+/// end of the [`Segmenter`]. Implementations are stateful (a noise-floor EMA, or
+/// a neural model carrying its recurrent state) so they take `&mut self`.
+pub trait SpeechGate: Send {
+    /// Whether `frame` (mono PCM at `rate` Hz) contains speech.
+    fn is_speech(&mut self, frame: &[f32], rate: u32) -> bool;
+    /// The most recent input level (roughly RMS, in `[0, 1]`) for the meter.
+    fn level(&self) -> f32;
+}
+
+/// The default [`SpeechGate`]: a cheap energy VAD with an adaptive noise floor
+/// (no per-user threshold). Robust enough for quiet rooms; a neural gate handles
+/// noisy ones better.
+pub struct EnergyGate {
+    noise_floor: f32,
+    last_level: f32,
+}
+
+impl Default for EnergyGate {
+    fn default() -> Self {
+        Self {
+            noise_floor: MIN_THRESHOLD,
+            last_level: 0.0,
+        }
+    }
+}
+
+impl EnergyGate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl SpeechGate for EnergyGate {
+    fn is_speech(&mut self, frame: &[f32], _rate: u32) -> bool {
+        if frame.is_empty() {
+            return false;
+        }
+        let level = rms_level(frame);
+        self.last_level = level;
+        let threshold = (self.noise_floor * NOISE_MARGIN).max(MIN_THRESHOLD);
+        if level > threshold {
+            true
+        } else {
+            // Track the ambient level from sub-threshold frames.
+            self.noise_floor = self.noise_floor * (1.0 - NOISE_ADAPT) + level * NOISE_ADAPT;
+            false
+        }
+    }
+
+    fn level(&self) -> f32 {
+        self.last_level
+    }
+}
 
 /// Audio kept before speech onset so a segment isn't clipped at the start.
 const PREROLL_MS: u32 = 250;
@@ -29,7 +85,9 @@ const MIN_THRESHOLD: f32 = 0.012;
 /// How quickly the noise floor tracks the ambient level (EMA weight).
 const NOISE_ADAPT: f32 = 0.05;
 
-/// Stateful energy VAD that turns a stream of PCM buffers into utterances.
+/// Turns a stream of PCM buffers into utterances. The speech decision is
+/// delegated to a [`SpeechGate`] (energy by default, Silero when available);
+/// this struct owns the pre-roll / hangover / length buffering around it.
 pub struct Segmenter {
     rate: u32,
     preroll_cap: usize,
@@ -41,15 +99,21 @@ pub struct Segmenter {
     /// Samples added while actually speaking (excludes pre-roll and the trailing
     /// hangover silence), used for the minimum-length gate.
     speech_samples: usize,
-    noise_floor: f32,
-    last_level: f32,
+    gate: Box<dyn SpeechGate>,
     utterance: Vec<f32>,
     preroll: VecDeque<f32>,
 }
 
 impl Segmenter {
-    /// Create a segmenter for audio captured at `rate` Hz (mono).
+    /// Create a segmenter for audio captured at `rate` Hz (mono) using the
+    /// default energy gate.
     pub fn new(rate: u32) -> Self {
+        Self::with_gate(rate, Box::new(EnergyGate::new()))
+    }
+
+    /// Create a segmenter with a custom speech gate (e.g. a neural VAD), keeping
+    /// the same pre-roll / hangover / length buffering.
+    pub fn with_gate(rate: u32, gate: Box<dyn SpeechGate>) -> Self {
         let ms = |m: u32| (m as u64 * rate.max(1) as u64 / 1000) as usize;
         Self {
             rate,
@@ -60,8 +124,7 @@ impl Segmenter {
             speaking: false,
             silence_run: 0,
             speech_samples: 0,
-            noise_floor: MIN_THRESHOLD,
-            last_level: 0.0,
+            gate,
             utterance: Vec::new(),
             preroll: VecDeque::new(),
         }
@@ -74,7 +137,7 @@ impl Segmenter {
 
     /// The most recent input level (RMS), for driving an input meter.
     pub fn level(&self) -> f32 {
-        self.last_level
+        self.gate.level()
     }
 
     /// Whether a speech run is currently in progress. Drives the dictation
@@ -97,11 +160,7 @@ impl Segmenter {
         if frame.is_empty() {
             return None;
         }
-        let level = rms_level(frame);
-        self.last_level = level;
-        let threshold = (self.noise_floor * NOISE_MARGIN).max(MIN_THRESHOLD);
-
-        if level > threshold {
+        if self.gate.is_speech(frame, self.rate) {
             if !self.speaking {
                 self.speaking = true;
                 self.utterance.clear();
@@ -110,17 +169,13 @@ impl Segmenter {
             self.utterance.extend_from_slice(frame);
             self.speech_samples += frame.len();
             self.silence_run = 0;
+        } else if self.speaking {
+            self.utterance.extend_from_slice(frame);
+            self.silence_run += frame.len();
         } else {
-            // Track the ambient level only while not in a speech run.
-            self.noise_floor = self.noise_floor * (1.0 - NOISE_ADAPT) + level * NOISE_ADAPT;
-            if self.speaking {
-                self.utterance.extend_from_slice(frame);
-                self.silence_run += frame.len();
-            } else {
-                self.preroll.extend(frame.iter().copied());
-                while self.preroll.len() > self.preroll_cap {
-                    self.preroll.pop_front();
-                }
+            self.preroll.extend(frame.iter().copied());
+            while self.preroll.len() > self.preroll_cap {
+                self.preroll.pop_front();
             }
         }
 

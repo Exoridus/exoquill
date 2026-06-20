@@ -9,6 +9,19 @@ repository.workspace = true
 
 [dependencies]
 cpal = "0.18.1"
+# Neural VAD (Silero) runtime — optional, pulled in only by the `silero` feature
+# so the default build never compiles ONNX Runtime. `load-dynamic` links
+# onnxruntime at runtime (dlopen); the dictation worker falls back to the energy
+# gate when the runtime or model is absent. Pinned to rc.10: rc.12's source
+# references a VitisAI ort-sys binding that isn't generated, so it won't build.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = [
+    "load-dynamic",
+], optional = true }
+
+[features]
+# Enable the Silero neural VAD gate. Off by default: it needs onnxruntime + the
+# model fetched separately (scripts/fetch-silero.ps1). See src/silero.rs.
+silero = ["dep:ort"]
 
 # cpal 0.18.1 declares `windows = ">=0.61, <=0.62"` and `windows-core =
 # ">=0.61, <=0.62"` as separate dependencies. Left unconstrained, Cargo

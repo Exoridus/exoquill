@@ -278,8 +278,8 @@ export default function App() {
         }
         editor.commands.scrollIntoView();
       },
-      onPartial: (text) => {
-        editorRef.current?.commands.setDictationGhost(text);
+      onPartial: (partial) => {
+        editorRef.current?.commands.setDictationGhost(partial.stable, partial.tail);
       },
       onLevel: setMicLevel,
       onError: setDictationError,

@@ -294,11 +294,17 @@
 }
 
 /* ---- Live dictation ---- */
-/* In-progress partial transcript shown at the caret while speaking. */
+/* In-progress partial transcript shown at the caret while speaking. The settled
+ * prefix reads calmly; the tentative tail is fainter since it may still change. */
 .dictation-ghost {
   color: var(--text-secondary);
-  opacity: 0.6;
   font-style: italic;
+}
+.dictation-ghost__stable {
+  opacity: 0.72;
+}
+.dictation-ghost__tail {
+  opacity: 0.42;
 }
 .dictation-bar {
   display: flex;

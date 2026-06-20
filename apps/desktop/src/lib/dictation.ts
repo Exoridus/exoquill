@@ -6,6 +6,7 @@
 import { listen } from "@tauri-apps/api/event";
 
 import { startDictation, stopDictation } from "./api";
+import type { PartialTranscript } from "./types";
 
 export { startDictation, stopDictation };
 
@@ -13,8 +14,9 @@ export interface DictationHandlers {
   /** A finalized transcript chunk to insert into the note. */
   onSegment: (text: string) => void;
   /** A live, in-progress transcript of the current utterance (ghost text), sent
-   *  repeatedly while speaking and superseded by the next `onSegment`. */
-  onPartial?: (text: string) => void;
+   *  repeatedly while speaking and superseded by the next `onSegment`. Split into
+   *  a frozen `stable` prefix and a still-tentative `tail`. */
+  onPartial?: (partial: PartialTranscript) => void;
   /** Input level in `[0, 1]` for the meter. */
   onLevel?: (level: number) => void;
   /** A non-fatal error (e.g. no microphone, transcription failure). */
@@ -29,7 +31,7 @@ export interface DictationHandlers {
 export async function subscribeDictation(handlers: DictationHandlers): Promise<() => void> {
   const unlisteners = await Promise.all([
     listen<string>("dictation_segment", (e) => handlers.onSegment(e.payload)),
-    listen<string>("dictation_partial", (e) => handlers.onPartial?.(e.payload)),
+    listen<PartialTranscript>("dictation_partial", (e) => handlers.onPartial?.(e.payload)),
     listen<number>("dictation_level", (e) => handlers.onLevel?.(e.payload)),
     listen<string>("dictation_error", (e) => handlers.onError?.(e.payload)),
     listen("dictation_started", () => handlers.onStarted?.()),

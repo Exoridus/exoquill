@@ -28,3 +28,8 @@ exoquill-capture = { version = "0.1.0", path = "../../../crates/exoquill-capture
 tauri-plugin-global-shortcut = "2.3.2"
 # Inline the region screenshot as a data: URL for the selection overlay.
 base64 = "0.22"
+
+[features]
+# Neural VAD for dictation (Silero ONNX). Off by default: needs onnxruntime + the
+# model fetched separately (scripts/fetch-silero.ps1). Forwards to exoquill-audio.
+silero = ["exoquill-audio/silero"]

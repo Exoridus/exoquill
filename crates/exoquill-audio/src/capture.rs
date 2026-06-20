@@ -3,13 +3,16 @@
 //! Opens an input stream on the chosen (or default) device, downmixes whatever
 //! interleaved format the device delivers to mono `f32`, and forwards buffers
 //! over a channel for the dictation worker to segment and transcribe. The cpal
-//! callback does no heavy work — it only downmixes and sends — so it never
+//! callback does no heavy work — it converts to `f32`, runs the channel-aware
+//! [`Downmixer`] and (for microphones) [`AutoGain`], and sends — so it never
 //! blocks the audio thread.
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig};
+
+use crate::gain::{AutoGain, Downmixer};
 
 /// A running capture: the live `stream` (kept alive for the session), the
 /// device sample rate, and the channel of mono `f32` buffers.
@@ -65,15 +68,18 @@ pub fn start_capture(device_name: Option<&str>, loopback: bool) -> Result<Captur
     let channels = config.channels().max(1);
     let sample_format = config.sample_format();
     let stream_config: StreamConfig = config.into();
+    // Auto-gain microphones (level varies wildly per mic/distance); leave loopback
+    // (system audio) untouched since it's already at line level.
+    let auto_gain = !loopback;
 
     let (tx, rx) = channel::<Vec<f32>>();
     let stream = match sample_format {
-        SampleFormat::F32 => build::<f32>(&device, &stream_config, channels, tx),
-        SampleFormat::I16 => build::<i16>(&device, &stream_config, channels, tx),
-        SampleFormat::I32 => build::<i32>(&device, &stream_config, channels, tx),
-        SampleFormat::I8 => build::<i8>(&device, &stream_config, channels, tx),
-        SampleFormat::U8 => build::<u8>(&device, &stream_config, channels, tx),
-        SampleFormat::U16 => build::<u16>(&device, &stream_config, channels, tx),
+        SampleFormat::F32 => build::<f32>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::I16 => build::<i16>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::I32 => build::<i32>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::I8 => build::<i8>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::U8 => build::<u8>(&device, &stream_config, channels, auto_gain, tx),
+        SampleFormat::U16 => build::<u16>(&device, &stream_config, channels, auto_gain, tx),
         other => return Err(format!("unsupported input sample format: {other}")),
     }
     .map_err(|e| format!("build input stream: {e}"))?;
@@ -93,12 +99,14 @@ fn device_label(device: &Device) -> Option<String> {
         .map(|description| description.name().to_owned())
 }
 
-/// Build a typed input stream that downmixes interleaved `T` frames to mono
-/// `f32` and forwards each callback buffer over `tx`.
+/// Build a typed input stream that converts interleaved `T` frames to `f32`,
+/// downmixes them to mono with the channel-aware [`Downmixer`], optionally
+/// applies [`AutoGain`] (`auto_gain`), and forwards each buffer over `tx`.
 fn build<T>(
     device: &Device,
     config: &StreamConfig,
     channels: u16,
+    auto_gain: bool,
     tx: Sender<Vec<f32>>,
 ) -> Result<Stream, cpal::Error>
 where
@@ -106,13 +114,15 @@ where
     f32: FromSample<T>,
 {
     let channels = channels as usize;
+    let mut downmixer = Downmixer::new(channels);
+    let mut gain = AutoGain::new();
     device.build_input_stream::<T, _, _>(
         *config,
         move |data: &[T], _| {
-            let mut mono = Vec::with_capacity(data.len() / channels + 1);
-            for frame in data.chunks(channels) {
-                let sum: f32 = frame.iter().copied().map(|s| f32::from_sample(s)).sum();
-                mono.push(sum / channels as f32);
+            let interleaved: Vec<f32> = data.iter().copied().map(|s| f32::from_sample(s)).collect();
+            let mut mono = downmixer.mix(&interleaved);
+            if auto_gain {
+                gain.process(&mut mono);
             }
             // The receiver is gone only once the worker has stopped; ignore.
             let _ = tx.send(mono);

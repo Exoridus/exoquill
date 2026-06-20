@@ -49,6 +49,13 @@ export interface CaptureSource {
   loopback: boolean;
 }
 
+/** A live, in-progress dictation transcript: a frozen `stable` prefix (words the
+ *  backend committed via LocalAgreement-2) plus a still-tentative `tail`. */
+export interface PartialTranscript {
+  stable: string;
+  tail: string;
+}
+
 /** One OCR word with its bounding box in the recognized image's pixel space. */
 export interface OcrWord {
   text: string;

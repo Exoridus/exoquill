@@ -135,6 +135,40 @@ fn resolve_whisper_server_paths(app: &App) -> Option<(PathBuf, PathBuf)> {
     (server.exists() && model.exists()).then_some((server, model))
 }
 
+/// Resolve the Silero VAD ONNX model and point ONNX Runtime at its dynamic
+/// library, for the `silero` feature. The model comes from `EXOQUILL_SILERO_MODEL`
+/// or the bundled `models/silero_vad.onnx`; the runtime dll from `ORT_DYLIB_PATH`
+/// (respected as-is), `EXOQUILL_ORT_DYLIB`, or the bundled
+/// `runtimes/onnxruntime/onnxruntime.dll`. Returns `None` (→ energy gate) when the
+/// model is absent. Fetch both with `scripts/fetch-silero.ps1`.
+#[cfg(feature = "silero")]
+fn resolve_silero_model_path(app: &App) -> Option<PathBuf> {
+    let resources = app.path().resource_dir().ok();
+    let model = std::env::var("EXOQUILL_SILERO_MODEL")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| resources.as_ref().map(|d| d.join("models/silero_vad.onnx")))?;
+    if !model.exists() {
+        return None;
+    }
+    // ort (load-dynamic) finds onnxruntime via ORT_DYLIB_PATH; set it from our
+    // bundled runtime if the caller hasn't already pointed it somewhere.
+    if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+        let dll = std::env::var("EXOQUILL_ORT_DYLIB")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(|| {
+                resources
+                    .as_ref()
+                    .map(|d| d.join("runtimes/onnxruntime/onnxruntime.dll"))
+            });
+        if let Some(dll) = dll.filter(|p| p.exists()) {
+            std::env::set_var("ORT_DYLIB_PATH", dll);
+        }
+    }
+    Some(model)
+}
+
 /// Pick the TTS provider: real Piper when reachable, else `None` (the UI then
 /// falls back to the webview's system speech synthesis).
 fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
@@ -252,6 +286,8 @@ pub fn run() {
                 tts,
                 dictation: Mutex::new(None),
                 region_capture: Mutex::new(None),
+                #[cfg(feature = "silero")]
+                silero_model_path: resolve_silero_model_path(app),
             });
 
             tray::setup_tray(app)?;
