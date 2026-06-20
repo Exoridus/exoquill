@@ -41,7 +41,7 @@ impl WhisperStt {
 
     /// Map the note's `language_mode` to a whisper `-l` value. German is the
     /// default (the product is German-first); only explicit `en`/`auto` differ.
-    fn language_flag(mode: &str) -> &'static str {
+    pub(crate) fn language_flag(mode: &str) -> &'static str {
         match mode {
             "en" => "en",
             "auto" => "auto",
@@ -52,7 +52,7 @@ impl WhisperStt {
     /// Build whisper's initial `--prompt` from custom terms so the decoder is
     /// biased toward the user's product/library names. `None` when there are
     /// none, so we don't pass an empty prompt.
-    fn build_prompt(custom_terms: &[String]) -> Option<String> {
+    pub(crate) fn build_prompt(custom_terms: &[String]) -> Option<String> {
         let terms: Vec<&str> = custom_terms
             .iter()
             .map(|t| t.trim())
@@ -63,7 +63,7 @@ impl WhisperStt {
 
     /// Encode mono `samples` as a 16-bit PCM WAV byte buffer (canonical 44-byte
     /// header). Samples are clamped to `[-1.0, 1.0]` before quantization.
-    fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
+    pub(crate) fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
         const BITS_PER_SAMPLE: u16 = 16;
         let block_align: u16 = BITS_PER_SAMPLE / 8; // mono
         let byte_rate = sample_rate * block_align as u32;
@@ -91,7 +91,7 @@ impl WhisperStt {
     }
 
     /// Join the lines of whisper's `.txt` output into a single normalized line.
-    fn parse_transcript(raw: &str) -> String {
+    pub(crate) fn parse_transcript(raw: &str) -> String {
         raw.lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
@@ -322,7 +322,7 @@ mod tests {
     /// Real end-to-end smoke test against the bundled whisper-cli + model.
     /// Ignored by default (needs the runtimes); run it with, e.g.:
     ///   $env:EXOQUILL_WHISPER=...\whisper-cli.exe
-    ///   $env:EXOQUILL_WHISPER_MODEL=...\ggml-base.bin
+    ///   $env:EXOQUILL_WHISPER_MODEL=...\ggml-large-v3-turbo-q5_0.bin
     ///   $env:EXOQUILL_TEST_WAV=...\jfk.wav   # English 16 kHz mono sample
     ///   cargo test -p exoquill-ai -- --ignored transcribes_real_wav --nocapture
     #[test]

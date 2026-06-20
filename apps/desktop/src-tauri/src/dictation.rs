@@ -14,11 +14,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use exoquill_ai::stt::{SpeechToTextProvider, SttRequest};
+use exoquill_ai::WhisperServer;
 use exoquill_audio::{resample_to_16k, start_capture, Segmenter};
 use exoquill_core::CancelToken;
 use serde::Serialize;
@@ -32,6 +33,11 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 /// Auto-stop the session after this long without any speech, so the user can
 /// pause to think mid-dictation without the recording ending immediately.
 const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// While speech is in progress, re-transcribe the in-progress utterance this
+/// often to emit a live partial transcript. Only used on the persistent
+/// whisper-server path (the per-call fallback is too slow for partials).
+const PARTIAL_INTERVAL: Duration = Duration::from_millis(700);
 
 /// A selectable dictation source: a microphone, or an output device captured via
 /// WASAPI loopback (`loopback = true`) to dictate from system audio.
@@ -62,14 +68,15 @@ pub fn start_dictation(
     if slot.is_some() {
         return Ok(());
     }
-    let stt = Arc::clone(&state.stt);
     let language = language_mode.unwrap_or_else(|| "de_en_terms".into());
     let loopback = loopback.unwrap_or(false);
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
 
+    // The worker resolves its STT provider itself (it may start the persistent
+    // whisper-server, which can take a moment) so this command returns at once.
     let handle = std::thread::spawn(move || {
-        run(app, stt, device, language, loopback, worker_stop);
+        run(app, device, language, loopback, worker_stop);
     });
     *slot = Some(DictationController { stop, handle });
     Ok(())
@@ -112,12 +119,15 @@ pub fn list_capture_sources() -> Vec<CaptureSource> {
 /// and owns the cpal stream (which is dropped when the loop ends).
 fn run(
     app: AppHandle,
-    stt: Arc<dyn SpeechToTextProvider>,
     device: Option<String>,
     language: String,
     loopback: bool,
     stop: Arc<AtomicBool>,
 ) {
+    // Start capture *before* resolving the STT provider so a cold whisper-server
+    // start (model load + GPU init, several seconds) never swallows the opening
+    // words. Frames captured during the warmup are segmented and queued, then
+    // transcribed retroactively once the provider is ready.
     let capture = match start_capture(device.as_deref(), loopback) {
         Ok(capture) => capture,
         Err(error) => {
@@ -129,17 +139,55 @@ fn run(
     };
     let _ = app.emit("dictation_started", ());
 
+    // Resolve the STT provider on a side thread — `ensure_stt` may start the
+    // persistent whisper-server and block for seconds, which must not stall
+    // capture. The result (provider + whether it supports live partials) lands in
+    // `stt_slot`; until then, finalized utterances wait in `pending`.
+    type ResolvedStt = (Arc<dyn SpeechToTextProvider>, bool);
+    let stt_slot: Arc<Mutex<Option<ResolvedStt>>> = Arc::new(Mutex::new(None));
+    let warmup = {
+        let app = app.clone();
+        let stt_slot = Arc::clone(&stt_slot);
+        std::thread::spawn(move || {
+            let resolved = ensure_stt(&app);
+            if let Ok(mut slot) = stt_slot.lock() {
+                *slot = Some(resolved);
+            }
+        })
+    };
+
     let rate = capture.sample_rate;
     let mut segmenter = Segmenter::new(rate);
     let cancel = CancelToken::new();
     let mut last_level = Instant::now();
     let mut last_voice = Instant::now();
+    let mut last_partial = Instant::now();
+    // Utterances finalized before the provider was ready, transcribed in order
+    // once it lands so the start of the session survives a cold server start.
+    let mut pending: Vec<Vec<f32>> = Vec::new();
+    let mut stt: Option<ResolvedStt> = None;
 
     while !stop.load(Ordering::Relaxed) {
+        // Adopt the provider as soon as the warmup finishes, flushing the backlog
+        // that accumulated (in speech order) while it was loading.
+        if stt.is_none() {
+            if let Some(resolved) = stt_slot.lock().ok().and_then(|mut s| s.take()) {
+                for utterance in pending.drain(..) {
+                    transcribe(&app, &resolved.0, &language, rate, utterance, &cancel);
+                }
+                stt = Some(resolved);
+            }
+        }
+
         match capture.frames.recv_timeout(LEVEL_INTERVAL) {
             Ok(frame) => {
                 if let Some(utterance) = segmenter.push(&frame) {
-                    transcribe(&app, &stt, &language, rate, utterance, &cancel);
+                    match stt.as_ref() {
+                        Some((provider, _)) => {
+                            transcribe(&app, provider, &language, rate, utterance, &cancel)
+                        }
+                        None => pending.push(utterance),
+                    }
                 }
                 if segmenter.is_active() {
                     last_voice = Instant::now();
@@ -152,6 +200,15 @@ fn run(
             let _ = app.emit("dictation_level", (segmenter.level() * 4.0).min(1.0));
             last_level = Instant::now();
         }
+        // Live partials: once the server is up and supports them, periodically
+        // re-transcribe the in-progress utterance and stream it as ghost text.
+        // Inline (blocking) is fine — the call is ~100 ms and frames just queue.
+        if let Some((provider, true)) = stt.as_ref() {
+            if segmenter.is_active() && last_partial.elapsed() >= PARTIAL_INTERVAL {
+                emit_partial(&app, provider, &language, rate, segmenter.utterance(), &cancel);
+                last_partial = Instant::now();
+            }
+        }
         // Auto-stop after a long silence so a thinking pause doesn't end the
         // session, but an abandoned one doesn't capture forever.
         if last_voice.elapsed() >= INACTIVITY_TIMEOUT {
@@ -159,9 +216,29 @@ fn run(
         }
     }
 
+    // Flush any trailing utterance, queuing it if the provider is still loading.
     if let Some(utterance) = segmenter.flush() {
-        transcribe(&app, &stt, &language, rate, utterance, &cancel);
+        match stt.as_ref() {
+            Some((provider, _)) => transcribe(&app, provider, &language, rate, utterance, &cancel),
+            None => pending.push(utterance),
+        }
     }
+    // If the provider never landed but we have queued audio, wait for the warmup
+    // so the opening words aren't dropped. With nothing queued, let it finish in
+    // the background (the started server is cached in AppState for next time) so
+    // stopping stays instant.
+    if stt.is_none() && !pending.is_empty() {
+        let _ = warmup.join();
+        if let Some(resolved) = stt_slot.lock().ok().and_then(|mut s| s.take()) {
+            stt = Some(resolved);
+        }
+    }
+    if let Some((provider, _)) = stt.as_ref() {
+        for utterance in pending.drain(..) {
+            transcribe(&app, provider, &language, rate, utterance, &cancel);
+        }
+    }
+
     drop(capture);
     clear_session(&app);
     let _ = app.emit("dictation_stopped", ());
@@ -204,4 +281,57 @@ fn transcribe(
             let _ = app.emit("dictation_error", error.to_string());
         }
     }
+}
+
+/// Transcribe the in-progress utterance and emit it as a live partial transcript
+/// (the UI shows it as ghost text and replaces it when the segment finalizes).
+/// Best-effort: a transient failure is swallowed so it never interrupts capture.
+fn emit_partial(
+    app: &AppHandle,
+    stt: &Arc<dyn SpeechToTextProvider>,
+    language: &str,
+    rate: u32,
+    buffer: &[f32],
+    cancel: &CancelToken,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+    let request = SttRequest {
+        samples: resample_to_16k(buffer, rate),
+        sample_rate: 16_000,
+        language_mode: language.to_string(),
+        custom_terms: Vec::new(),
+    };
+    if let Ok(response) = stt.run(request, cancel) {
+        let text = response.text.trim();
+        if !text.is_empty() {
+            let _ = app.emit("dictation_partial", text.to_string());
+        }
+    }
+}
+
+/// Resolve the STT provider for a session: the persistent whisper-server
+/// (starting it on first use), which enables live partials, otherwise the
+/// per-call fallback in [`AppState`] (`false` = no partials). A server-start
+/// failure falls through silently to the fallback — dictation still works.
+fn ensure_stt(app: &AppHandle) -> (Arc<dyn SpeechToTextProvider>, bool) {
+    let state = app.state::<AppState>();
+    if let Some((binary, model)) = state.whisper_server_paths.clone() {
+        let mut slot = match state.whisper_server.lock() {
+            Ok(slot) => slot,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if slot.is_none() {
+            if let Ok(server) = WhisperServer::start(&binary, &model) {
+                *slot = Some(server);
+            }
+        }
+        if let Some(server) = slot.as_ref() {
+            if let Ok(client) = server.client() {
+                return (Arc::new(client) as Arc<dyn SpeechToTextProvider>, true);
+            }
+        }
+    }
+    (Arc::clone(&state.stt), false)
 }

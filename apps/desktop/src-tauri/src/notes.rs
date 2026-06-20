@@ -1,6 +1,7 @@
 //! Tauri commands for the notes core. Thin wrappers that lock the database and
 //! map persistence errors to strings for the IPC bridge.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use exoquill_ai::formatter::FormatterProvider;
@@ -19,13 +20,24 @@ pub struct AppState {
     pub jobs: JobQueue,
     pub formatter: Arc<dyn FormatterProvider>,
     pub ocr: Arc<dyn OcrProvider>,
-    /// Real Whisper when reachable, otherwise the mock (placeholder transcript).
+    /// Per-call Whisper (`whisper-cli`) when reachable, otherwise the mock. Used
+    /// as the dictation fallback when the persistent server can't start.
     pub stt: Arc<dyn SpeechToTextProvider>,
+    /// `(whisper-server.exe, model)` paths for the persistent low-latency server,
+    /// or `None` when the runtime/model isn't available. Resolved once at setup.
+    pub whisper_server_paths: Option<(PathBuf, PathBuf)>,
+    /// The persistent whisper-server, started lazily on first dictation and kept
+    /// alive (model resident on the GPU) so partial transcripts are cheap.
+    /// Dropping it kills the server.
+    pub whisper_server: Mutex<Option<exoquill_ai::WhisperServer>>,
     /// `None` when no local TTS is available; the UI falls back to system speech.
     pub tts: Option<Arc<dyn TextToSpeechProvider>>,
     /// The active dictation session, if capturing. Guarded so start/stop and the
     /// worker never race on it.
     pub dictation: Mutex<Option<crate::dictation::DictationController>>,
+    /// The frozen screenshot for an in-progress region-OCR selection (set when
+    /// the overlay opens, drained when the user selects a region or cancels).
+    pub region_capture: Mutex<Option<exoquill_capture::ScreenShot>>,
 }
 
 type CommandResult<T> = Result<T, String>;

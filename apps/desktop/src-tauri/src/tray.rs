@@ -19,6 +19,11 @@ pub fn quick_note_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyN)
 }
 
+/// The global region-OCR (snipping-tool) shortcut: Ctrl+Alt+O.
+pub fn region_ocr_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyO)
+}
+
 /// Build the tray icon with a Show / New Note / Quit menu.
 pub fn setup_tray(app: &App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show ExoQuill", true, None::<&str>)?;

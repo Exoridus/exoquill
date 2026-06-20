@@ -24,4 +24,7 @@ serde_json = "1"
 exoquill-db = { version = "0.1.0", path = "../../../crates/exoquill-db" }
 exoquill-ai = { version = "0.1.0", path = "../../../crates/exoquill-ai" }
 exoquill-audio = { version = "0.1.0", path = "../../../crates/exoquill-audio" }
+exoquill-capture = { version = "0.1.0", path = "../../../crates/exoquill-capture" }
 tauri-plugin-global-shortcut = "2.3.2"
+# Inline the region screenshot as a data: URL for the selection overlay.
+base64 = "0.22"

@@ -14,7 +14,7 @@ import * as api from "./lib/api";
 import { playSamples, stopPlayback } from "./lib/audio";
 import { startDictation, stopDictation, subscribeDictation } from "./lib/dictation";
 import { speak, stopSpeaking } from "./lib/speech";
-import type { BackendEvent, CaptureSource, Note, NoteUpdate, OcrLayout } from "./lib/types";
+import type { BackendEvent, CaptureSource, Note, NoteUpdate, OcrLayout, RegionOcr } from "./lib/types";
 import "./styles/app.css";
 
 function sortNotes(notes: Note[]): Note[] {
@@ -55,6 +55,10 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Guards against re-entering the async start/stop (e.g. a double-click).
   const dictationBusy = useRef(false);
+  // Where dictated text lands, decided when dictation starts: "replace" the
+  // initial selection (first segment) then continue at the cursor, or "cursor"
+  // (insert at the caret — also covers append-to-end when nothing was focused).
+  const dictationMode = useRef<"replace" | "cursor">("cursor");
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
@@ -223,6 +227,18 @@ export default function App() {
         await stopDictation();
       } else {
         setDictationError(null);
+        // Decide where dictation lands (applied as segments arrive): a selection
+        // is replaced; a focused caret inserts in place; otherwise append at the
+        // end (move the caret there and scroll to it).
+        const editor = editorRef.current;
+        if (editor && activeId && selectionText(editor).trim()) {
+          dictationMode.current = "replace";
+        } else if (editor && activeId && editor.isFocused) {
+          dictationMode.current = "cursor";
+        } else {
+          dictationMode.current = "cursor";
+          if (editor && activeId) editor.chain().focus("end").scrollIntoView().run();
+        }
         let language = activeNote?.languageMode;
         if (!activeId) {
           const note = await api.createNote("", "dictation");
@@ -252,7 +268,18 @@ export default function App() {
     const unsub = subscribeDictation({
       onSegment: (text) => {
         const editor = editorRef.current;
-        if (editor) insertAtCursor(editor, text);
+        if (!editor) return;
+        editor.commands.clearDictationGhost();
+        if (dictationMode.current === "replace") {
+          replaceSelection(editor, text);
+          dictationMode.current = "cursor"; // further segments append at the caret
+        } else {
+          insertAtCursor(editor, text);
+        }
+        editor.commands.scrollIntoView();
+      },
+      onPartial: (text) => {
+        editorRef.current?.commands.setDictationGhost(text);
       },
       onLevel: setMicLevel,
       onError: setDictationError,
@@ -263,6 +290,7 @@ export default function App() {
       onStopped: () => {
         setDictating(false);
         setMicLevel(0);
+        editorRef.current?.commands.clearDictationGhost();
       },
     });
     return () => {
@@ -285,6 +313,24 @@ export default function App() {
       void unlisten.then((fn) => fn());
     };
   }, [newNote]);
+
+  // Region OCR (Ctrl+Alt+O snipping tool): the overlay window forwards its
+  // cropped image + recognized layout here; open the selectable OCR overlay.
+  useEffect(() => {
+    const result = listen<RegionOcr>("region-ocr-result", ({ payload }) => {
+      setOcr((cur) => {
+        if (cur) URL.revokeObjectURL(cur.url);
+        return { url: payload.dataUrl, layout: payload.layout };
+      });
+    });
+    const error = listen<string>("region-ocr-error", ({ payload }) =>
+      setDictationError(`Region-OCR fehlgeschlagen: ${payload}`),
+    );
+    return () => {
+      void result.then((fn) => fn());
+      void error.then((fn) => fn());
+    };
+  }, []);
 
   const triggerOcr = useCallback(() => fileInputRef.current?.click(), []);
 

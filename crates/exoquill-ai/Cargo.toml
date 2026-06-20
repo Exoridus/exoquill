@@ -11,3 +11,10 @@ repository.workspace = true
 exoquill-capture = { version = "0.1.0", path = "../exoquill-capture" }
 exoquill-core = { version = "0.1.0", path = "../exoquill-core" }
 serde = { version = "1.0.228", features = ["derive"] }
+# Talks to the persistent whisper-server over localhost HTTP (multipart upload of
+# WAV to /inference). Blocking is fine: the dictation worker is a plain thread.
+reqwest = { version = "0.13", default-features = false, features = [
+    "blocking",
+    "multipart",
+    "json",
+] }

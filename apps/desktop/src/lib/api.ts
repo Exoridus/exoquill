@@ -8,6 +8,8 @@ import type {
   NoteSource,
   NoteUpdate,
   OcrLayout,
+  RegionCapture,
+  RegionOcr,
   TtsResponse,
 } from "./types";
 
@@ -66,6 +68,26 @@ export function ocrImage(imageBytes: number[]): Promise<OcrLayout> {
 /** Format a short snippet synchronously and return the result. */
 export function formatText(text: string, instruction?: string): Promise<string> {
   return invoke<string>("format_text", { text, instruction: instruction ?? null });
+}
+
+/** The frozen screenshot for the region-OCR overlay to display (PNG data URL). */
+export function getRegionCapture(): Promise<RegionCapture> {
+  return invoke<RegionCapture>("get_region_capture");
+}
+
+/** Crop the selected region (logical/CSS px, monitor-relative) and OCR it. */
+export function ocrRegion(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): Promise<RegionOcr> {
+  return invoke<RegionOcr>("ocr_region", rect);
+}
+
+/** Discard an in-progress region capture (overlay cancelled). */
+export function cancelRegionOcr(): Promise<void> {
+  return invoke("cancel_region_ocr");
 }
 
 /** Start live dictation into the active note. Capture + transcription run in

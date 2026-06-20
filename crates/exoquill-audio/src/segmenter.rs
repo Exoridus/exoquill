@@ -83,6 +83,14 @@ impl Segmenter {
         self.speaking
     }
 
+    /// The in-progress utterance buffer (mono samples at the capture rate) — the
+    /// audio accumulated since speech onset, before a pause finalizes it. Used to
+    /// transcribe partial results for live streaming dictation. Empty when not
+    /// currently speaking.
+    pub fn utterance(&self) -> &[f32] {
+        &self.utterance
+    }
+
     /// Feed one captured buffer. Returns a finalized utterance (mono samples at
     /// the capture rate) when a speech run just ended, otherwise `None`.
     pub fn push(&mut self, frame: &[f32]) -> Option<Vec<f32>> {

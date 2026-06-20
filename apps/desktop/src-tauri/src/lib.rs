@@ -17,7 +17,7 @@ use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
 use notes::AppState;
-use tauri::{App, Emitter, Manager};
+use tauri::{App, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 /// Returns the ExoQuill core crate version.
@@ -91,7 +91,11 @@ fn resolve_stt_provider(app: &App) -> Arc<dyn SpeechToTextProvider> {
     let model = std::env::var("EXOQUILL_WHISPER_MODEL")
         .map(PathBuf::from)
         .ok()
-        .or_else(|| resources.as_ref().map(|d| d.join("models/ggml-base.bin")));
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("models/ggml-large-v3-turbo-q5_0.bin"))
+        });
     match (binary, model) {
         (Some(binary), Some(model)) => {
             let whisper = WhisperStt::new(binary, model);
@@ -103,6 +107,32 @@ fn resolve_stt_provider(app: &App) -> Arc<dyn SpeechToTextProvider> {
         }
         _ => Arc::new(MockSpeechToText),
     }
+}
+
+/// Resolve the persistent whisper-server binary + model. `whisper-server.exe`
+/// sits next to `whisper-cli.exe` (built/bundled together) and shares the same
+/// ggml model as the per-call provider. `None` if either is missing — dictation
+/// then runs without the server (no live partials), via the per-call fallback.
+fn resolve_whisper_server_paths(app: &App) -> Option<(PathBuf, PathBuf)> {
+    let resources = app.path().resource_dir().ok();
+    let cli = std::env::var("EXOQUILL_WHISPER")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("whisper/whisper-cli.exe"))
+        })?;
+    let server = cli.with_file_name("whisper-server.exe");
+    let model = std::env::var("EXOQUILL_WHISPER_MODEL")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("models/ggml-large-v3-turbo-q5_0.bin"))
+        })?;
+    (server.exists() && model.exists()).then_some((server, model))
 }
 
 /// Pick the TTS provider: real Piper when reachable, else `None` (the UI then
@@ -126,14 +156,70 @@ fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
         .then(|| Arc::new(piper) as Arc<dyn TextToSpeechProvider>)
 }
 
+/// Open the region-OCR selection overlay: freeze the monitor under the cursor,
+/// stash the screenshot in state, and show a borderless, always-on-top window
+/// covering that monitor where the user drags a rectangle (snipping-tool style).
+/// No-op if an overlay is already open. The webview routes by window label.
+fn start_region_ocr(app: &AppHandle) {
+    if app.get_webview_window("region-overlay").is_some() {
+        return;
+    }
+    let cursor = match app.cursor_position() {
+        Ok(pos) => pos,
+        Err(error) => {
+            let _ = app.emit("region-ocr-error", error.to_string());
+            return;
+        }
+    };
+    let shot = match exoquill_capture::capture_at_point(cursor.x as i32, cursor.y as i32) {
+        Ok(shot) => shot,
+        Err(error) => {
+            let _ = app.emit("region-ocr-error", error);
+            return;
+        }
+    };
+    let (x, y, w, h) = (
+        shot.logical_x,
+        shot.logical_y,
+        shot.logical_width,
+        shot.logical_height,
+    );
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut slot) = state.region_capture.lock() {
+            *slot = Some(shot);
+        }
+    }
+    if let Err(error) = WebviewWindowBuilder::new(
+        app,
+        "region-overlay",
+        WebviewUrl::App("index.html".into()),
+    )
+    .position(x, y)
+    .inner_size(w, h)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .focused(true)
+    .build()
+    {
+        let _ = app.emit("region-ocr-error", error.to_string());
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if *shortcut == tray::region_ocr_shortcut() {
+                        start_region_ocr(app);
+                    } else {
                         tray::show_main(app);
                         let _ = app.emit("quick-note", ());
                     }
@@ -153,6 +239,7 @@ pub fn run() {
             let ocr = resolve_ocr_provider(app);
             let formatter = resolve_formatter_provider(app);
             let stt = resolve_stt_provider(app);
+            let whisper_server_paths = resolve_whisper_server_paths(app);
             let tts = resolve_tts_provider(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
@@ -160,13 +247,18 @@ pub fn run() {
                 formatter,
                 ocr,
                 stt,
+                whisper_server_paths,
+                whisper_server: Mutex::new(None),
                 tts,
                 dictation: Mutex::new(None),
+                region_capture: Mutex::new(None),
             });
 
             tray::setup_tray(app)?;
             app.global_shortcut()
                 .register(tray::quick_note_shortcut())?;
+            app.global_shortcut()
+                .register(tray::region_ocr_shortcut())?;
             tray::setup_close_to_tray(app);
             Ok(())
         })
@@ -184,12 +276,26 @@ pub fn run() {
             jobs::list_jobs,
             jobs::run_ocr,
             jobs::ocr_image,
+            jobs::get_region_capture,
+            jobs::ocr_region,
+            jobs::cancel_region_ocr,
             jobs::format_text,
             jobs::tts_speak,
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::list_capture_sources,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Kill the persistent whisper-server on quit (its Drop kills the
+            // child); otherwise it would outlive the app.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    if let Ok(mut server) = state.whisper_server.lock() {
+                        let _ = server.take();
+                    }
+                }
+            }
+        });
 }

@@ -14,3 +14,6 @@ image = { version = "0.25.10", default-features = false, features = [
     "png",
     "jpeg",
 ] }
+# Screen capture for desktop region OCR (snipping-tool overlay). Cross-platform,
+# multi-monitor; returns an `image` RgbaImage we convert via raw RGBA bytes.
+xcap = "0.9"

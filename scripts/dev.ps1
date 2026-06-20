@@ -13,7 +13,7 @@ $env:EXOQUILL_FORMATTER_MODEL = Join-Path $runtimes "models\qwen2.5-1.5b-instruc
 $env:EXOQUILL_PIPER = Join-Path $runtimes "piper\piper.exe"
 $env:EXOQUILL_PIPER_VOICE = Join-Path $runtimes "piper-voices\de_DE-thorsten-medium.onnx"
 $env:EXOQUILL_WHISPER = Join-Path $runtimes "whisper\whisper-cli.exe"
-$env:EXOQUILL_WHISPER_MODEL = Join-Path $runtimes "models\ggml-base.bin"
+$env:EXOQUILL_WHISPER_MODEL = Join-Path $runtimes "models\ggml-large-v3-turbo-q5_0.bin"
 
 Set-Location $root
 pnpm dev

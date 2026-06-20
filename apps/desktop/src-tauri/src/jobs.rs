@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use base64::Engine;
 use exoquill_ai::formatter::FormatRequest;
 use exoquill_ai::ocr::{OcrLayout, OcrRequest};
 use exoquill_ai::tts::{TtsRequest, TtsResponse};
@@ -156,6 +157,82 @@ pub fn ocr_image(state: State<AppState>, image_bytes: Vec<u8>) -> Result<OcrLayo
         .ocr
         .run_layout(request, &CancelToken::new())
         .map_err(|e| e.to_string())
+}
+
+/// The full frozen screenshot for the region-OCR overlay, as a PNG data URL.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionCapture {
+    pub data_url: String,
+}
+
+/// A selected region: the cropped image (PNG data URL) plus its OCR layout.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionOcr {
+    pub data_url: String,
+    pub layout: OcrLayout,
+}
+
+fn png_data_url(bytes: &[u8]) -> String {
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+}
+
+/// Hand the frozen screenshot to the selection overlay so it can display the
+/// monitor it covers.
+#[tauri::command]
+pub fn get_region_capture(state: State<AppState>) -> Result<RegionCapture, String> {
+    let guard = state.region_capture.lock().map_err(|e| e.to_string())?;
+    let shot = guard.as_ref().ok_or("no region capture in progress")?;
+    Ok(RegionCapture {
+        data_url: png_data_url(&shot.to_png()?),
+    })
+}
+
+/// OCR the selected region. The rectangle is in the overlay's logical coordinates
+/// (CSS px relative to the monitor); it's mapped to pixels and cropped from the
+/// frozen screenshot, which is then consumed (freed). Returns the cropped image
+/// + layout for the result overlay.
+#[tauri::command]
+pub fn ocr_region(
+    state: State<AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<RegionOcr, String> {
+    let png = {
+        let mut guard = state.region_capture.lock().map_err(|e| e.to_string())?;
+        let shot = guard.as_ref().ok_or("no region capture in progress")?;
+        let cropped = shot.crop_png(x, y, width, height)?;
+        *guard = None; // free the full-screen capture now that we've cropped it
+        cropped
+    };
+    let png = png.ok_or("empty selection")?;
+    let layout = state
+        .ocr
+        .run_layout(
+            OcrRequest {
+                image_bytes: png.clone(),
+                languages: "deu+eng".into(),
+            },
+            &CancelToken::new(),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(RegionOcr {
+        data_url: png_data_url(&png),
+        layout,
+    })
+}
+
+/// Discard an in-progress region capture (the overlay was cancelled).
+#[tauri::command]
+pub fn cancel_region_ocr(state: State<AppState>) -> Result<(), String> {
+    *state.region_capture.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
 }
 
 /// Format a short snippet (e.g. an editor selection) and return the result

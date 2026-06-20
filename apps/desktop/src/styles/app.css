@@ -294,6 +294,12 @@
 }
 
 /* ---- Live dictation ---- */
+/* In-progress partial transcript shown at the caret while speaking. */
+.dictation-ghost {
+  color: var(--text-secondary);
+  opacity: 0.6;
+  font-style: italic;
+}
 .dictation-bar {
   display: flex;
   align-items: center;

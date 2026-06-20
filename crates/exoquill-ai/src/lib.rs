@@ -16,11 +16,13 @@ pub mod tesseract;
 pub mod tts;
 pub mod vad;
 pub mod whisper;
+pub mod whisper_server;
 
 pub use llama::LlamaFormatter;
 pub use piper::PiperTts;
 pub use tesseract::TesseractOcr;
 pub use whisper::WhisperStt;
+pub use whisper_server::{WhisperServer, WhisperServerStt};
 
 pub use provider::{
     CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider, ProviderError,

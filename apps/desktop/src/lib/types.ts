@@ -68,6 +68,17 @@ export interface OcrLayout {
   height: number;
 }
 
+/** The frozen full-screen capture for the region-OCR overlay (PNG data URL). */
+export interface RegionCapture {
+  dataUrl: string;
+}
+
+/** A selected screen region: cropped image (PNG data URL) + its OCR layout. */
+export interface RegionOcr {
+  dataUrl: string;
+  layout: OcrLayout;
+}
+
 // Backend event bus payloads (tagged by `type`); see exoquill-core::events.
 export type BackendEvent =
   | { type: "job_updated"; job: Job }

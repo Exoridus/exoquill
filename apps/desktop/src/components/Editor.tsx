@@ -4,6 +4,8 @@ import StarterKit from "@tiptap/starter-kit";
 import { useEffect } from "react";
 import { Markdown } from "tiptap-markdown";
 
+import { DictationGhost } from "./dictationGhost";
+
 interface Props {
   /** Initial Markdown. The parent remounts this via `key` on note switch. */
   initialMarkdown: string;
@@ -18,6 +20,7 @@ export function Editor({ initialMarkdown, onChange, onReady }: Props) {
       StarterKit,
       Markdown.configure({ html: false, transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing, or capture something…" }),
+      DictationGhost,
     ],
     content: initialMarkdown,
     onUpdate: ({ editor }) => {
