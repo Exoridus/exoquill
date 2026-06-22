@@ -212,11 +212,7 @@ mod tests {
     fn tts_emits_samples() {
         let out = MockTextToSpeech
             .run(
-                TtsRequest {
-                    text: "hallo".into(),
-                    voice_id: "de-calm".into(),
-                    speed: 1.0,
-                },
+                TtsRequest::new("hallo", "de-calm", 1.0),
                 &CancelToken::new(),
             )
             .unwrap();

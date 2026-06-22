@@ -22,6 +22,20 @@
   --accent-contrast: #ffffff;
   --accent-soft-bg: #e1f1e8;
   --accent-soft-text: #157a4b;
+  --accent-border: #9fd3bb;
+
+  /* Trash / destructive (Papierkorb), and pin (Amber — distinct from the green
+     action accent). Used by scope tabs, trash actions, and the pin group. */
+  --danger: #be4334;
+  --danger-ink: #9c3526;
+  --danger-soft: #f7e7e4;
+  --danger-border: #e3b6ae;
+  --pin: #b7791f;
+  --pin-soft: #f6ecd8;
+
+  /* Raised panel fill behind muted badges (e.g. the MANUAL history op badge). */
+  --panel2: #eef0f1;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
 
   --active-note-bg: #ffffff;
   --active-note-border: #d6e7dd;

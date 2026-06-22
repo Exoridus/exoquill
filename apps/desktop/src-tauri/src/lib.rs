@@ -1,5 +1,6 @@
 mod dictation;
 mod jobs;
+mod models;
 mod notes;
 mod tray;
 
@@ -12,7 +13,7 @@ use exoquill_ai::ocr::OcrProvider;
 use exoquill_ai::provider::{Health, Provider};
 use exoquill_ai::stt::SpeechToTextProvider;
 use exoquill_ai::tts::TextToSpeechProvider;
-use exoquill_ai::{LlamaFormatter, PiperTts, TesseractOcr, WhisperStt};
+use exoquill_ai::{LlamaFormatter, PiperTts, TesseractOcr, WhisperStt, XttsTts};
 use exoquill_core::{EventSink, JobQueue};
 use exoquill_db::Database;
 use jobs::TauriEventSink;
@@ -73,6 +74,32 @@ fn resolve_formatter_provider(app: &App) -> Arc<dyn FormatterProvider> {
         }
         _ => Arc::new(MockFormatter),
     }
+}
+
+/// Resolve the persistent llama-server binary + model. `llama-server.exe` sits
+/// next to `llama-completion.exe` (bundled together) and shares the same Qwen
+/// GGUF as the per-call formatter. `None` if either is missing — formatting then
+/// runs via the per-call fallback in [`AppState`].
+fn resolve_llama_server_paths(app: &App) -> Option<(PathBuf, PathBuf)> {
+    let resources = app.path().resource_dir().ok();
+    let cli = std::env::var("EXOQUILL_LLAMA")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("llama/llama-completion.exe"))
+        })?;
+    let server = cli.with_file_name("llama-server.exe");
+    let model = std::env::var("EXOQUILL_FORMATTER_MODEL")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("models/qwen2.5-1.5b-instruct-q4_k_m.gguf"))
+        })?;
+    (server.exists() && model.exists()).then_some((server, model))
 }
 
 /// Pick the STT provider: real whisper.cpp + ggml model when reachable, else
@@ -170,24 +197,72 @@ fn resolve_silero_model_path(app: &App) -> Option<PathBuf> {
 }
 
 /// Pick the TTS provider: real Piper when reachable, else `None` (the UI then
-/// falls back to the webview's system speech synthesis).
+/// falls back to the webview's system speech synthesis). Every `*.onnx` in the
+/// voices directory becomes a selectable voice. `EXOQUILL_PIPER_VOICE` still
+/// names the default voice (dev); its parent directory is scanned for the rest.
+/// For release the bundled `piper-voices/` resource dir is scanned instead, with
+/// `de_DE-thorsten-medium` as the default.
 fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+    // Experimental: prefer the XTTS-v2 sidecar when its URL is set and reachable
+    // (multilingual DE/EN; non-commercial weights — test only, never bundled).
+    // Falls through to Piper otherwise. Start it with scripts/xtts-server.py.
+    if let Ok(url) = std::env::var("EXOQUILL_XTTS_URL") {
+        if let Some(xtts) = XttsTts::connect(url) {
+            return Some(Arc::new(xtts) as Arc<dyn TextToSpeechProvider>);
+        }
+    }
+
     let resources = app.path().resource_dir().ok();
     let binary = std::env::var("EXOQUILL_PIPER")
         .map(PathBuf::from)
         .ok()
         .or_else(|| resources.as_ref().map(|d| d.join("piper/piper.exe")))?;
-    let model = std::env::var("EXOQUILL_PIPER_VOICE")
+    let default_voice = std::env::var("EXOQUILL_PIPER_VOICE")
         .map(PathBuf::from)
-        .ok()
-        .or_else(|| {
-            resources
-                .as_ref()
-                .map(|d| d.join("piper-voices/de_DE-thorsten-medium.onnx"))
-        })?;
-    let piper = PiperTts::new(binary, model, 22_050);
+        .ok();
+    let voices_dir = default_voice
+        .as_ref()
+        .and_then(|p| p.parent().map(PathBuf::from))
+        .or_else(|| resources.as_ref().map(|d| d.join("piper-voices")))?;
+    let default_id = default_voice
+        .as_ref()
+        .and_then(|p| p.file_stem())
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "de_DE-thorsten-medium".to_string());
+    let piper = PiperTts::discover(binary, voices_dir, default_id);
     matches!(piper.health_check(), Health::Ready)
         .then(|| Arc::new(piper) as Arc<dyn TextToSpeechProvider>)
+}
+
+/// Resolve the auto-spawn paths for the experimental XTTS sidecar: the venv
+/// Python + `xtts-server.py`, from `EXOQUILL_XTTS_PYTHON` / `EXOQUILL_XTTS_SCRIPT`
+/// (set by dev.ps1). `None` when not configured, or when `EXOQUILL_XTTS_URL`
+/// points at an already-running server (that takes precedence). The XTTS weights
+/// are non-commercial, so this is opt-in and never part of a bundled release.
+fn resolve_xtts_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
+    if std::env::var_os("EXOQUILL_XTTS_URL").is_some() {
+        return None;
+    }
+    let python = std::env::var("EXOQUILL_XTTS_PYTHON").map(PathBuf::from).ok()?;
+    let script = std::env::var("EXOQUILL_XTTS_SCRIPT").map(PathBuf::from).ok()?;
+    (python.exists() && script.exists()).then_some((python, script))
+}
+
+/// Python + `zonos-server.py` + a reference-voice folder, from
+/// `EXOQUILL_ZONOS_PYTHON` / `EXOQUILL_ZONOS_SCRIPT` / `EXOQUILL_ZONOS_VOICES`
+/// (set by dev.ps1). `None` when not configured. Zonos weights are Apache-2.0,
+/// but it needs a CUDA GPU, so it's opt-in via the env vars.
+fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let python = std::env::var("EXOQUILL_ZONOS_PYTHON")
+        .map(PathBuf::from)
+        .ok()?;
+    let script = std::env::var("EXOQUILL_ZONOS_SCRIPT")
+        .map(PathBuf::from)
+        .ok()?;
+    let voices = std::env::var("EXOQUILL_ZONOS_VOICES")
+        .map(PathBuf::from)
+        .ok()?;
+    (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
 }
 
 /// Open the region-OCR selection overlay: freeze the monitor under the cursor,
@@ -270,23 +345,40 @@ pub fn run() {
 
             let ocr = resolve_ocr_provider(app);
             let formatter = resolve_formatter_provider(app);
+            let llama_server_paths = resolve_llama_server_paths(app);
             let stt = resolve_stt_provider(app);
             let whisper_server_paths = resolve_whisper_server_paths(app);
             let tts = resolve_tts_provider(app);
+            let xtts_paths = resolve_xtts_paths(app);
+            let zonos_paths = resolve_zonos_paths(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
                 formatter,
+                llama_server_paths,
+                llama_server: Mutex::new(None),
                 ocr,
                 stt,
                 whisper_server_paths,
                 whisper_server: Mutex::new(None),
                 tts,
+                xtts_paths,
+                xtts_server: Mutex::new(None),
+                xtts_warming: std::sync::atomic::AtomicBool::new(false),
+                zonos_paths,
+                zonos_server: Mutex::new(None),
+                zonos_warming: std::sync::atomic::AtomicBool::new(false),
+                read_cancel: Mutex::new(exoquill_core::CancelToken::new()),
                 dictation: Mutex::new(None),
                 region_capture: Mutex::new(None),
                 #[cfg(feature = "silero")]
                 silero_model_path: resolve_silero_model_path(app),
             });
+
+            // TTS sidecars are NOT started here. Loading both XTTS and Zonos at
+            // launch froze the UI (two heavy Python/CUDA model loads at once).
+            // The UI calls `warm_tts(provider)` for the active backend instead, so
+            // only one loads, on demand, at below-normal priority.
 
             tray::setup_tray(app)?;
             app.global_shortcut()
@@ -302,10 +394,17 @@ pub fn run() {
             notes::get_note,
             notes::update_note,
             notes::delete_note,
+            notes::restore_note,
+            notes::set_archived,
+            notes::hard_delete_note,
+            notes::purge_trash,
             notes::list_notes,
             notes::search_notes,
             notes::resolve_target_note,
             notes::list_note_events,
+            notes::snapshot_note_version,
+            notes::list_note_history,
+            notes::restore_note_version,
             notes::export_note,
             jobs::format_note,
             jobs::cancel_job,
@@ -316,8 +415,18 @@ pub fn run() {
             jobs::ocr_region,
             jobs::cancel_region_ocr,
             jobs::format_text,
+            jobs::begin_read,
+            jobs::prepare_speech,
+            jobs::cancel_read,
             jobs::tts_speak,
+            jobs::export_audio,
+            jobs::warm_tts,
+            jobs::ensure_tts_ready,
+            jobs::list_tts_voices,
             jobs::list_model_info,
+            models::list_catalog,
+            models::install_model,
+            models::delete_model,
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::list_capture_sources,
@@ -330,6 +439,15 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     if let Ok(mut server) = state.whisper_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.llama_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.xtts_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.zonos_server.lock() {
                         let _ = server.take();
                     }
                 }

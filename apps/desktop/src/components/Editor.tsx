@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { useEffect } from "react";
 import { Markdown } from "tiptap-markdown";
 
+import { translate, useI18n } from "../lib/i18n";
 import { DictationGhost } from "./dictationGhost";
 
 interface Props {
@@ -15,11 +16,12 @@ interface Props {
 }
 
 export function Editor({ initialMarkdown, onChange, onReady }: Props) {
+  const { lang } = useI18n();
   const editor = useEditor({
     extensions: [
       StarterKit,
       Markdown.configure({ html: false, transformPastedText: true }),
-      Placeholder.configure({ placeholder: "Start writing, or capture something…" }),
+      Placeholder.configure({ placeholder: translate(lang, "editor.placeholder") }),
       DictationGhost,
     ],
     content: initialMarkdown,
@@ -35,6 +37,18 @@ export function Editor({ initialMarkdown, onChange, onReady }: Props) {
   useEffect(() => {
     if (editor && onReady) onReady(editor);
   }, [editor, onReady]);
+
+  // Keep the placeholder in the active language without remounting the editor:
+  // update the Placeholder extension's option and nudge ProseMirror to recompute
+  // its decorations. Defensive about the extension internals.
+  useEffect(() => {
+    if (!editor) return;
+    const ext = editor.extensionManager.extensions.find((e) => e.name === "placeholder");
+    if (ext) {
+      (ext.options as { placeholder: string }).placeholder = translate(lang, "editor.placeholder");
+      editor.view.dispatch(editor.state.tr);
+    }
+  }, [editor, lang]);
 
   return <EditorContent editor={editor} className="editor-body" />;
 }

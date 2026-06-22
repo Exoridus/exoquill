@@ -56,7 +56,7 @@ pub struct DictationController {
 }
 
 /// Begin streaming dictation into the active note. No-op if already running.
-#[tauri::command]
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn start_dictation(
     state: State<AppState>,
@@ -104,7 +104,7 @@ pub fn start_dictation(
 }
 
 /// Stop the current dictation session, flushing any trailing utterance.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_dictation(state: State<AppState>) -> Result<(), String> {
     let controller = state.dictation.lock().map_err(|e| e.to_string())?.take();
     if let Some(controller) = controller {
@@ -116,7 +116,7 @@ pub fn stop_dictation(state: State<AppState>) -> Result<(), String> {
 
 /// The available dictation sources: microphones plus output devices that can be
 /// captured via WASAPI loopback (to dictate from system audio).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_capture_sources() -> Vec<CaptureSource> {
     let mut sources: Vec<CaptureSource> = exoquill_audio::list_input_devices()
         .into_iter()

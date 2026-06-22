@@ -1,4 +1,16 @@
-import { DictateIcon, FormatIcon, OcrIcon, ReadIcon, TrashIcon } from "./icons";
+import type { Lang } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
+import type { Theme } from "../hooks/useTheme";
+import {
+  DictateIcon,
+  FormatIcon,
+  GlobeIcon,
+  MoonIcon,
+  OcrIcon,
+  ReadIcon,
+  SunIcon,
+  TrashIcon,
+} from "./icons";
 
 interface Props {
   onDictate: () => void;
@@ -11,11 +23,20 @@ interface Props {
   dictating: boolean;
   formatting: boolean;
   reading: boolean;
+  /** Whether a note is open; note-scoped actions are disabled without one. */
+  hasNote: boolean;
+  // Global controls (moved here from the former top bar).
+  theme: Theme;
+  onToggleTheme: () => void;
+  onShowModels: () => void;
+  lang: Lang;
+  onToggleLang: () => void;
 }
 
 /**
- * The four core actions plus delete. Dictate toggles microphone capture; the
- * audio is transcribed locally by Whisper (PR 5). OCR, Format and Read are wired.
+ * The per-note actions on the left (dictate / OCR / format / read / export /
+ * history / delete) and the global controls on the right (models, language,
+ * theme). This is the app's only toolbar — the former top bar was folded in.
  */
 export function ActionBar({
   onDictate,
@@ -28,47 +49,94 @@ export function ActionBar({
   dictating,
   formatting,
   reading,
+  hasNote,
+  theme,
+  onToggleTheme,
+  onShowModels,
+  lang,
+  onToggleLang,
 }: Props) {
+  const { t } = useI18n();
   return (
     <div className="actionbar">
       <button
         className={`action-btn action-btn--primary${dictating ? " action-btn--recording" : ""}`}
         onClick={onDictate}
         aria-pressed={dictating}
-        title={dictating ? "Stop dictation" : "Dictate into this note"}
+        title={dictating ? t("action.dictate.stopTitle") : t("action.dictate.title")}
       >
         <DictateIcon size={14} />
-        {dictating ? "Stop" : "Dictate"}
+        {dictating ? t("action.stop") : t("action.dictate")}
       </button>
-      <button className="action-btn" onClick={onOcr} title="OCR an image into this note">
+      <button className="action-btn" onClick={onOcr} title={t("action.ocr.title")}>
         <OcrIcon size={14} />
-        OCR
+        {t("action.ocr")}
       </button>
       <button
         className="action-btn"
         onClick={onFormat}
-        disabled={formatting}
-        title="Format the selection, or the whole note"
+        disabled={formatting || !hasNote}
+        title={t("action.format.title")}
       >
         <FormatIcon size={14} />
-        {formatting ? "Formatting…" : "Format"}
+        {formatting ? t("action.formatting") : t("action.format")}
       </button>
       <button
         className="action-btn"
         onClick={onRead}
-        title="Read the selection or note aloud"
+        disabled={!hasNote}
+        title={t("action.read.title")}
       >
         <ReadIcon size={14} />
-        {reading ? "Stop" : "Read"}
+        {reading ? t("action.stop") : t("action.read")}
       </button>
-      <button className="action-btn" onClick={onExport} title="Export this note as Markdown">
-        Export
+      <button
+        className="action-btn"
+        onClick={onExport}
+        disabled={!hasNote}
+        title={t("action.export.title")}
+      >
+        {t("action.export")}
       </button>
-      <button className="action-btn" onClick={onHistory} title="Show this note's event history">
-        History
+      <button
+        className="action-btn"
+        onClick={onHistory}
+        disabled={!hasNote}
+        title={t("action.history.title")}
+      >
+        {t("action.history")}
       </button>
-      <span className="actionbar__badge">MD</span>
-      <button className="icon-btn" onClick={onDelete} title="Delete note" aria-label="Delete note">
+
+      <span className="actionbar__spacer" />
+
+      <button className="action-btn" onClick={onShowModels} title={t("toolbar.models.title")}>
+        {t("toolbar.models")}
+      </button>
+      <button
+        className="icon-btn icon-btn--lang"
+        onClick={onToggleLang}
+        title={t("toolbar.lang.title")}
+        aria-label={t("toolbar.lang.aria")}
+      >
+        <GlobeIcon size={15} />
+        <span className="icon-btn__tag">{lang.toUpperCase()}</span>
+      </button>
+      <button
+        className="icon-btn"
+        onClick={onToggleTheme}
+        title={t("toolbar.theme.title")}
+        aria-label={t("toolbar.theme.aria")}
+      >
+        {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+      </button>
+      <span className="actionbar__divider" />
+      <button
+        className="icon-btn"
+        onClick={onDelete}
+        disabled={!hasNote}
+        title={t("action.delete.title")}
+        aria-label={t("action.delete.title")}
+      >
         <TrashIcon size={15} />
       </button>
     </div>

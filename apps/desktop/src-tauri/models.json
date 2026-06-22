@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "_comment": "Model catalog for the in-app manager. tier: bundled (ships in the installer, redistributable) | download (free, fetched on demand) | gated (restrictive license, needs acceptance). Licenses are verified in docs/decisions.md; 'TBD' = pending per-asset check (decisions D2).",
+  "models": [
+    {
+      "id": "voice-de_DE-thorsten-high",
+      "provider": "piper",
+      "kind": "voice",
+      "displayName": "Thorsten — Deutsch (high)",
+      "language": "de_DE",
+      "license": "CC0-1.0",
+      "commercialOk": true,
+      "tier": "bundled",
+      "files": [
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx", "relPath": "piper-voices/de_DE-thorsten-high.onnx" },
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json", "relPath": "piper-voices/de_DE-thorsten-high.onnx.json" }
+      ]
+    },
+    {
+      "id": "voice-en_GB-cori-high",
+      "provider": "piper",
+      "kind": "voice",
+      "displayName": "Cori — English GB (high)",
+      "language": "en_GB",
+      "license": "Public Domain (LibriVox)",
+      "commercialOk": true,
+      "tier": "download",
+      "notes": "Public Domain — bündelbar; aktuell als Download, um den Installer schlank zu halten.",
+      "files": [
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/high/en_GB-cori-high.onnx", "relPath": "piper-voices/en_GB-cori-high.onnx" },
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/high/en_GB-cori-high.onnx.json", "relPath": "piper-voices/en_GB-cori-high.onnx.json" }
+      ]
+    },
+    {
+      "id": "voice-en_US-ryan-high",
+      "provider": "piper",
+      "kind": "voice",
+      "displayName": "Ryan — English US (high)",
+      "language": "en_US",
+      "license": "CC-BY-NC-SA-4.0",
+      "commercialOk": false,
+      "tier": "gated",
+      "notes": "Nicht-kommerziell (CC BY-NC-SA 4.0). Nur Download mit Zustimmung, NICHT bündelbar, keine kommerzielle Nutzung.",
+      "files": [
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx", "relPath": "piper-voices/en_US-ryan-high.onnx" },
+        { "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json", "relPath": "piper-voices/en_US-ryan-high.onnx.json" }
+      ]
+    },
+    {
+      "id": "tts-xtts-v2",
+      "provider": "xtts",
+      "kind": "runtime",
+      "displayName": "XTTS-v2 — multilingual (experimentell)",
+      "language": "multi",
+      "license": "CPML (non-commercial)",
+      "commercialOk": false,
+      "tier": "gated",
+      "setup": "scripts/setup-xtts.ps1",
+      "notes": "Nicht-kommerzielle Modell-Lizenz (CPML). Wird nicht gebündelt; lokal per Setup-Skript installiert. ~1,75 GB Modell + Python/PyTorch. Alle ~58 Sprecher inklusive.",
+      "files": []
+    },
+    {
+      "id": "tts-zonos-v0_1",
+      "provider": "zonos",
+      "kind": "runtime",
+      "displayName": "Zonos-v0.1 — multilingual (experimentell)",
+      "language": "multi",
+      "license": "Apache-2.0",
+      "commercialOk": true,
+      "tier": "download",
+      "setup": "scripts/setup-zonos.ps1",
+      "notes": "Apache-2.0 (kommerziell ok, anders als XTTS). Wird nicht gebündelt; lokal per Setup-Skript installiert. Benötigt eine CUDA-GPU. Stimmen via Voice-Cloning aus eigenen Referenz-WAVs (zonos-voices/).",
+      "files": []
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 
 pub mod formatter;
 pub mod llama;
+pub mod llama_server;
 pub mod mock;
 pub mod ocr;
 pub mod piper;
@@ -17,12 +18,17 @@ pub mod tts;
 pub mod vad;
 pub mod whisper;
 pub mod whisper_server;
+pub mod xtts;
+pub mod zonos;
 
 pub use llama::LlamaFormatter;
+pub use llama_server::{LlamaServer, LlamaServerFormatter};
 pub use piper::PiperTts;
 pub use tesseract::TesseractOcr;
 pub use whisper::WhisperStt;
+pub use xtts::{XttsServer, XttsTts};
 pub use whisper_server::{WhisperServer, WhisperServerStt};
+pub use zonos::{ZonosServer, ZonosTts};
 
 pub use provider::{
     CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider, ProviderError,

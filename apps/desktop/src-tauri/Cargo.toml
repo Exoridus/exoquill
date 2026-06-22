@@ -22,13 +22,19 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-exoquill-db = { version = "0.1.0", path = "../../../crates/exoquill-db" }
-exoquill-ai = { version = "0.1.0", path = "../../../crates/exoquill-ai" }
-exoquill-audio = { version = "0.1.0", path = "../../../crates/exoquill-audio" }
-exoquill-capture = { version = "0.1.0", path = "../../../crates/exoquill-capture" }
+exoquill-db = { version = "0.2.0", path = "../../../crates/exoquill-db" }
+exoquill-ai = { version = "0.2.0", path = "../../../crates/exoquill-ai" }
+exoquill-audio = { version = "0.2.0", path = "../../../crates/exoquill-audio" }
+exoquill-capture = { version = "0.2.0", path = "../../../crates/exoquill-capture" }
 tauri-plugin-global-shortcut = "2.3.2"
 # Inline the region screenshot as a data: URL for the selection overlay.
 base64 = "0.22"
+# Download on-demand models (HuggingFace, https) for the model manager. rustls
+# avoids native-tls/openssl on Windows; blocking is fine inside async commands.
+reqwest = { version = "0.13", default-features = false, features = [
+    "blocking",
+    "rustls",
+] }
 
 [features]
 # Neural VAD for dictation (Silero ONNX). Off by default: needs onnxruntime + the

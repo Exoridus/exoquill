@@ -8,9 +8,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-exoquill-capture = { version = "0.1.0", path = "../exoquill-capture" }
-exoquill-core = { version = "0.1.0", path = "../exoquill-core" }
+exoquill-capture = { version = "0.2.0", path = "../exoquill-capture" }
+exoquill-core = { version = "0.2.0", path = "../exoquill-core" }
 serde = { version = "1.0.228", features = ["derive"] }
+# Parse Piper voice configs (`*.onnx.json`) for the per-voice sample rate.
+serde_json = "1"
 # Talks to the persistent whisper-server over localhost HTTP (multipart upload of
 # WAV to /inference). Blocking is fine: the dictation worker is a plain thread.
 reqwest = { version = "0.13", default-features = false, features = [
