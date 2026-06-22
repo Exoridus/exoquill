@@ -8,8 +8,11 @@ use exoquill_ai::formatter::FormatterProvider;
 use exoquill_ai::ocr::OcrProvider;
 use exoquill_ai::stt::SpeechToTextProvider;
 use exoquill_ai::tts::TextToSpeechProvider;
-use exoquill_core::note::{NewNote, Note, NoteEvent, NoteSource, NoteUpdate};
-use exoquill_core::JobQueue;
+use exoquill_core::note::{
+    NewNote, NewNoteVersion, Note, NoteEvent, NoteScope, NoteSort, NoteSource, NoteUpdate,
+    NoteVersion,
+};
+use exoquill_core::{CancelToken, JobQueue};
 use exoquill_db::Database;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -19,7 +22,15 @@ pub struct AppState {
     /// Shared so job tasks can persist results from the worker thread.
     pub db: Arc<Mutex<Database>>,
     pub jobs: JobQueue,
+    /// Per-call llama.cpp (`llama-cli`) when reachable, otherwise the mock. Used
+    /// as the formatter fallback when the persistent server can't start.
     pub formatter: Arc<dyn FormatterProvider>,
+    /// `(llama-server.exe, model)` paths for the persistent formatter server, or
+    /// `None` when the runtime/model isn't available. Resolved once at setup.
+    pub llama_server_paths: Option<(PathBuf, PathBuf)>,
+    /// The persistent llama-server, started lazily on first format and kept alive
+    /// (model resident) so chunked formatting is fast. Dropping it kills it.
+    pub llama_server: Mutex<Option<exoquill_ai::LlamaServer>>,
     pub ocr: Arc<dyn OcrProvider>,
     /// Per-call Whisper (`whisper-cli`) when reachable, otherwise the mock. Used
     /// as the dictation fallback when the persistent server can't start.
@@ -32,7 +43,33 @@ pub struct AppState {
     /// Dropping it kills the server.
     pub whisper_server: Mutex<Option<exoquill_ai::WhisperServer>>,
     /// `None` when no local TTS is available; the UI falls back to system speech.
+    /// This is the Piper (or external-URL XTTS) provider resolved at setup; it's
+    /// the fallback when the auto-spawned XTTS sidecar isn't running.
     pub tts: Option<Arc<dyn TextToSpeechProvider>>,
+    /// `(python, xtts-server.py)` paths to auto-spawn the XTTS sidecar, or `None`
+    /// when not configured (then TTS uses `tts` above). Experimental / dev.
+    pub xtts_paths: Option<(PathBuf, PathBuf)>,
+    /// The XTTS sidecar, warmed up on demand (when the UI selects the XTTS
+    /// backend) and kept alive. Dropping it kills the Python process. Not started
+    /// at launch — that's what froze the UI when two sidecars loaded at once.
+    pub xtts_server: Mutex<Option<exoquill_ai::XttsServer>>,
+    /// Guards against starting two XTTS sidecars when `warm_tts` is called twice
+    /// before the first finishes loading.
+    pub xtts_warming: std::sync::atomic::AtomicBool,
+    /// `(python, zonos-server.py, voices_dir)` to spawn the Zonos sidecar, or
+    /// `None` when not configured. `voices_dir` holds the reference `.wav` clips
+    /// (one per voice). Apache-2.0 weights, but needs a CUDA GPU.
+    pub zonos_paths: Option<(PathBuf, PathBuf, PathBuf)>,
+    /// The Zonos sidecar, warmed up on demand (when the UI selects Zonos) and
+    /// kept alive. Dropping it kills the Python process.
+    pub zonos_server: Mutex<Option<exoquill_ai::ZonosServer>>,
+    /// Guards against starting two Zonos sidecars concurrently (see above).
+    pub zonos_warming: std::sync::atomic::AtomicBool,
+    /// Cancellation for the in-progress read-aloud speech-prep pass. `begin_read`
+    /// installs a fresh token, `cancel_read` trips it, and each `prepare_speech`
+    /// chunk runs under it so a cancel stops the streaming llama generation
+    /// mid-flight instead of letting the chunk run to completion.
+    pub read_cancel: Mutex<CancelToken>,
     /// The active dictation session, if capturing. Guarded so start/stop and the
     /// worker never race on it.
     pub dictation: Mutex<Option<crate::dictation::DictationController>>,
@@ -47,7 +84,7 @@ pub struct AppState {
 
 type CommandResult<T> = Result<T, String>;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_note(
     state: State<AppState>,
     content_markdown: String,
@@ -64,13 +101,13 @@ pub fn create_note(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_note(state: State<AppState>, id: String) -> CommandResult<Option<Note>> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_note(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_note(
     state: State<AppState>,
     id: String,
@@ -80,25 +117,99 @@ pub fn update_note(
     db.update_note(&id, update).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+/// Move a note to the trash (soft-delete). Returns `true` if a live note moved.
+#[tauri::command(async)]
 pub fn delete_note(state: State<AppState>, id: String) -> CommandResult<bool> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.delete_note(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn list_notes(state: State<AppState>) -> CommandResult<Vec<Note>> {
+/// Restore a trashed note back to Active.
+#[tauri::command(async)]
+pub fn restore_note(state: State<AppState>, id: String) -> CommandResult<bool> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.list_notes().map_err(|e| e.to_string())
+    db.restore_note(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn search_notes(state: State<AppState>, query: String) -> CommandResult<Vec<Note>> {
+/// Archive or un-archive a live note.
+#[tauri::command(async)]
+pub fn set_archived(state: State<AppState>, id: String, archived: bool) -> CommandResult<bool> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.search_notes(&query).map_err(|e| e.to_string())
+    db.set_archived(&id, archived).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+/// Permanently delete a note (and its events + versions). No undo.
+#[tauri::command(async)]
+pub fn hard_delete_note(state: State<AppState>, id: String) -> CommandResult<bool> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.hard_delete_note(&id).map_err(|e| e.to_string())
+}
+
+/// Permanently delete trashed notes older than `before` (an RFC-3339 timestamp,
+/// e.g. now − 30 days; the frontend computes the cutoff). Returns the count.
+#[tauri::command(async)]
+pub fn purge_trash(state: State<AppState>, before: String) -> CommandResult<usize> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.purge_trash(&before).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn list_notes(
+    state: State<AppState>,
+    scope: Option<NoteScope>,
+    sort: Option<NoteSort>,
+) -> CommandResult<Vec<Note>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.list_notes(scope.unwrap_or_default(), sort.unwrap_or_default())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn search_notes(
+    state: State<AppState>,
+    query: String,
+    scope: Option<NoteScope>,
+) -> CommandResult<Vec<Note>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.search_notes(&query, scope.unwrap_or_default())
+        .map_err(|e| e.to_string())
+}
+
+/// Record a content snapshot for the edit history (deduped by content hash, so
+/// no-op saves add nothing). Returns the stored version, or `None` if deduped.
+#[tauri::command(async)]
+pub fn snapshot_note_version(
+    state: State<AppState>,
+    version: NewNoteVersion,
+) -> CommandResult<Option<NoteVersion>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.insert_version(version).map_err(|e| e.to_string())
+}
+
+/// A note's edit-history versions (diff timeline), most recent first.
+#[tauri::command(async)]
+pub fn list_note_history(
+    state: State<AppState>,
+    note_id: String,
+) -> CommandResult<Vec<NoteVersion>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.list_versions(&note_id).map_err(|e| e.to_string())
+}
+
+/// Restore a stored version's content into the note as a new, undoable change
+/// (non-destructive). Returns the updated note, or `None` if it's gone.
+#[tauri::command(async)]
+pub fn restore_note_version(
+    state: State<AppState>,
+    note_id: String,
+    version_id: String,
+) -> CommandResult<Option<Note>> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.restore_version(&note_id, &version_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
 pub fn resolve_target_note(state: State<AppState>, active: Option<String>) -> CommandResult<Note> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.resolve_target_note(active.as_deref())
@@ -107,7 +218,7 @@ pub fn resolve_target_note(state: State<AppState>, active: Option<String>) -> Co
 
 /// The recorded events for a note (formatting/OCR history + undo safety net),
 /// most recent first.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_note_events(state: State<AppState>, note_id: String) -> CommandResult<Vec<NoteEvent>> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.list_events(&note_id).map_err(|e| e.to_string())
@@ -116,7 +227,7 @@ pub fn list_note_events(state: State<AppState>, note_id: String) -> CommandResul
 /// Export a note's Markdown to a file the user picks (native save dialog).
 /// Returns the saved path, or `None` if the user cancelled. Notes are stored as
 /// Markdown, so this writes `content_markdown` verbatim.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_note(
     state: State<AppState>,
     app: AppHandle,

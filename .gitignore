@@ -45,11 +45,30 @@ pnpm-debug.log*
 # Workspace scratch (internal, not shipped)
 .workspace/scratch/
 .workspace/reports/
+.workspace/shots/
+.workspace/exoquill-design/
+.workspace/*.mjs
+# Private / unrelated files that land in the workspace (invoices, etc.)
+.workspace/*.pdf
 
 # Design exploration: keep the brand HTML + mockups, drop the artifact cruft
 .workspace/**/*.zip
 .workspace/design-exploration/support.js
 .workspace/design-exploration/.thumbnail
 
+# Local test artifacts / caches (not shipped)
+*.wav
+__pycache__/
+
+# Stray spec from an unrelated project (not part of ExoQuill)
+/read.md
+
 # Local AI runtimes + models (bundled as resources for release, not in git)
 runtimes/
+
+# Experimental TTS sidecars: local venvs, the Zonos source clone, and the
+# user's private reference-voice clips — all local, none committed.
+.venv-xtts/
+.venv-zonos/
+.zonos-src/
+zonos-voices/

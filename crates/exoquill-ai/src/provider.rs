@@ -7,12 +7,28 @@
 //! processes (decisions D8).
 
 use std::fmt;
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
 // The cancellation primitive lives in core so the job queue and providers share
 // one type. Re-exported here for ergonomic `crate::provider::CancelToken` use.
 pub use exoquill_core::CancelToken;
+
+/// On Windows, start a child process at below-normal priority so heavy CPU work
+/// (LLM inference, neural-TTS warm-up/synthesis) yields to the foreground UI and
+/// doesn't freeze the webview. No-op on other platforms. Shared by the spawned
+/// runtimes (llama-server, XTTS, Zonos).
+pub(crate) fn below_normal_priority(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
+        command.creation_flags(BELOW_NORMAL_PRIORITY_CLASS);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
 
 /// A capability a provider advertises to the UI and scheduler.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -10,6 +10,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cancelRegionOcr, getRegionCapture, ocrRegion } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 interface Rect {
   x: number;
@@ -28,6 +29,7 @@ function rectFrom(ax: number, ay: number, bx: number, by: number): Rect {
 }
 
 export function RegionOverlay() {
+  const { t } = useI18n();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [busy, setBusy] = useState(false);
@@ -153,7 +155,7 @@ export function RegionOverlay() {
             pointerEvents: "none",
           }}
         >
-          Bereich aufziehen · Esc bricht ab
+          {t("region.hint")}
         </div>
       )}
     </div>

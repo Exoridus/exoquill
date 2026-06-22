@@ -120,10 +120,14 @@ where
     let channels = channels as usize;
     let mut downmixer = Downmixer::new(channels);
     let mut agc = AutoGain::new();
+    // Reused across callbacks so the realtime audio thread doesn't reallocate the
+    // interleaved→f32 conversion buffer every buffer (~10–20 ms).
+    let mut interleaved: Vec<f32> = Vec::new();
     device.build_input_stream::<T, _, _>(
         *config,
         move |data: &[T], _| {
-            let interleaved: Vec<f32> = data.iter().copied().map(|s| f32::from_sample(s)).collect();
+            interleaved.clear();
+            interleaved.extend(data.iter().copied().map(f32::from_sample));
             let mut mono = downmixer.mix(&interleaved);
             match gain {
                 None => agc.process(&mut mono),

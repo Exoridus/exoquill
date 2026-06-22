@@ -5,6 +5,8 @@ export type NoteSource = "manual" | "dictation" | "ocr";
 export interface Note {
   id: string;
   title: string;
+  /** True while the title auto-follows the content (the user hasn't named it). */
+  titleAuto: boolean;
   contentMarkdown: string;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +26,36 @@ export interface NoteUpdate {
   lastCursorPosition?: number;
 }
 
+/** Which slice of notes a listing returns (the sidebar's scope tabs). */
+export type NoteScope = "active" | "archived" | "trash";
+
+/** Sort order for a note listing, applied within the pinned/un-pinned split. */
+export type NoteSort = "modified" | "created" | "title";
+
+/** A stored content snapshot for the edit-history diff timeline. `source` is
+ *  "manual" (a typing-pause snapshot) or "op" (written by an operation); `op`
+ *  names that operation (e.g. "format", "ocr", "dictation", "restore"). */
+export interface NoteVersion {
+  id: string;
+  noteId: string;
+  createdAt: string;
+  contentMarkdown: string;
+  contentHash: string;
+  source: string;
+  op: string | null;
+  providerId: string | null;
+}
+
+/** Input for recording a NoteVersion (id/createdAt/hash filled in by the DB). */
+export interface NewNoteVersion {
+  noteId: string;
+  contentMarkdown: string;
+  /** "manual" | "op"; defaults to "manual" when omitted. */
+  source?: string;
+  op?: string;
+  providerId?: string;
+}
+
 /** A recorded note event (format/OCR history + undo safety net). */
 export interface NoteEvent {
   id: string;
@@ -36,6 +68,32 @@ export interface NoteEvent {
   modelId: string | null;
   modelVersion: string | null;
   createdAt: string;
+}
+
+/** An installable model/voice in the catalog, with its on-disk status. */
+export interface CatalogItem {
+  id: string;
+  provider: string;
+  kind: string;
+  displayName: string;
+  language: string;
+  license: string;
+  commercialOk: boolean;
+  /** "bundled" | "download" | "gated". */
+  tier: string;
+  /** Setup-script path for runtimes that aren't a plain file download (XTTS). */
+  setup: string | null;
+  notes: string | null;
+  installed: boolean;
+  installedBytes: number;
+}
+
+/** Download progress for a model file (the `model_progress` backend event). */
+export interface ModelProgress {
+  id: string;
+  file: string;
+  downloaded: number;
+  total: number;
 }
 
 /** Read-only summary of the provider behind an AI capability (settings/about). */
@@ -64,8 +122,41 @@ export interface Job {
 }
 
 export interface TtsResponse {
-  samples: number[];
+  /** Base64 of 16-bit little-endian mono PCM (decoded in audio.ts). */
+  pcm: string;
   sampleRate: number;
+}
+
+/** A selectable read-aloud voice offered by the local TTS provider. */
+export interface TtsVoice {
+  id: string;
+  displayName: string;
+  language: string;
+  quality: string;
+  /** Synthesis backend this voice belongs to (`"piper"` | `"xtts"`); passed
+   *  back to `ttsSpeak` so the request is routed to the right provider. */
+  provider: string;
+}
+
+/** Read-aloud synthesis knobs. `speed` applies to every backend; the rest are
+ *  backend-specific (a provider applies only the ones it understands). Omitted
+ *  fields fall back to model defaults. */
+export interface TtsTuning {
+  /** Speaking rate; 1.0 = normal, >1 faster. */
+  speed?: number;
+  /** Piper expressiveness / timbre variation (noise_scale). */
+  expressiveness?: number;
+  /** Piper cadence variability (noise_w). */
+  cadence?: number;
+  /** Seconds of silence after each sentence (Piper). */
+  sentenceSilence?: number;
+  /** Zonos intonation liveliness (pitch_std); low monotone, high lively. */
+  intonation?: number;
+  /** Zonos synthesis frequency ceiling in Hz (fmax); lower warmer, higher brighter. */
+  brightness?: number;
+  /** Zonos emotion preset key (see `lib/tts.ts`); resolved to an 8-value vector
+   *  before synthesis. `"neutral"`/omitted leaves Zonos' own default. */
+  emotion?: string;
 }
 
 /** A dictation source: a microphone, or an output device captured via loopback. */

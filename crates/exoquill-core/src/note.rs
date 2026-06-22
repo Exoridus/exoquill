@@ -20,12 +20,61 @@ pub enum NoteSource {
     Ocr,
 }
 
+/// Which slice of notes a listing returns. Backs the sidebar's scope tabs:
+/// `Active` (live, un-archived) is the default; `Archived` and `Trash` are the
+/// other two views. A note is in exactly one scope at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteScope {
+    #[default]
+    Active,
+    Archived,
+    Trash,
+}
+
+impl NoteScope {
+    /// The SQL predicate selecting this scope's rows. A fixed string per variant
+    /// (no user input), so it's safe to interpolate into a query.
+    pub fn predicate(self) -> &'static str {
+        match self {
+            NoteScope::Active => "deleted_at IS NULL AND archived = 0",
+            NoteScope::Archived => "deleted_at IS NULL AND archived = 1",
+            NoteScope::Trash => "deleted_at IS NOT NULL",
+        }
+    }
+}
+
+/// Sort order for a note listing, applied within the pinned/un-pinned split.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteSort {
+    #[default]
+    Modified,
+    Created,
+    Title,
+}
+
+impl NoteSort {
+    /// The SQL `ORDER BY` term for this sort (a fixed string per variant).
+    pub fn order_by(self) -> &'static str {
+        match self {
+            NoteSort::Modified => "updated_at DESC",
+            NoteSort::Created => "created_at DESC",
+            NoteSort::Title => "title COLLATE NOCASE ASC",
+        }
+    }
+}
+
 /// A note as persisted and sent to the frontend (camelCase over the IPC bridge).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Note {
     pub id: String,
     pub title: String,
+    /// `true` while the title is auto-derived from the content (the user hasn't
+    /// edited it). Cleared the moment the user types a title; restored when they
+    /// clear it again. Drives the auto-title regeneration in the persistence layer.
+    pub title_auto: bool,
     pub content_markdown: String,
     pub created_at: String,
     pub updated_at: String,
@@ -78,6 +127,38 @@ pub struct NewNoteEvent {
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
     pub model_version: Option<String>,
+}
+
+/// A stored snapshot of a note's content for the edit-history diff timeline
+/// (sent to the frontend as camelCase). Snapshots are deduplicated by
+/// `content_hash`, so a no-op save adds nothing. `source` is `"manual"` (a
+/// typing-pause snapshot) or `"op"` (written by an operation — format/OCR/
+/// dictation); `op` names that operation when `source == "op"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteVersion {
+    pub id: String,
+    pub note_id: String,
+    pub created_at: String,
+    pub content_markdown: String,
+    pub content_hash: String,
+    pub source: String,
+    pub op: Option<String>,
+    pub provider_id: Option<String>,
+}
+
+/// Input for recording a [`NoteVersion`]; `id`, `created_at`, and `content_hash`
+/// are filled in by the persistence layer.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNoteVersion {
+    pub note_id: String,
+    pub content_markdown: String,
+    /// `"manual"` | `"op"`; defaults to `"manual"` when omitted by the caller.
+    #[serde(default)]
+    pub source: Option<String>,
+    pub op: Option<String>,
+    pub provider_id: Option<String>,
 }
 
 /// Partial update for a note. Only `Some` fields are written; `updated_at` is
