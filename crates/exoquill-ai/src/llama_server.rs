@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::formatter::{FormatRequest, FormatResponse, FormatterProvider};
 use crate::llama::DEFAULT_SYSTEM;
 use crate::provider::{
-    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider,
-    ProviderError, ProviderResult,
+    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement,
+    Provider, ProviderError, ProviderResult,
 };
 
 /// A running `llama-server` child + the localhost URL it serves. Dropping it

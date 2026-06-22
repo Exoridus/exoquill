@@ -26,8 +26,8 @@ pub use llama_server::{LlamaServer, LlamaServerFormatter};
 pub use piper::PiperTts;
 pub use tesseract::TesseractOcr;
 pub use whisper::WhisperStt;
-pub use xtts::{XttsServer, XttsTts};
 pub use whisper_server::{WhisperServer, WhisperServerStt};
+pub use xtts::{XttsServer, XttsTts};
 pub use zonos::{ZonosServer, ZonosTts};
 
 pub use provider::{

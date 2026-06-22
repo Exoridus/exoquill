@@ -179,7 +179,9 @@ impl TextToSpeechProvider for PiperTts {
                 .arg(format!("{:.3}", 1.0 / request.speed));
         }
         if let Some(noise_scale) = request.expressiveness {
-            command.arg("--noise_scale").arg(format!("{noise_scale:.3}"));
+            command
+                .arg("--noise_scale")
+                .arg(format!("{noise_scale:.3}"));
         }
         if let Some(noise_w) = request.cadence {
             command.arg("--noise_w").arg(format!("{noise_w:.3}"));
@@ -325,7 +327,10 @@ mod tests {
             split_voice_id("de_DE-thorsten_emotional-medium"),
             ("de_DE".into(), "medium".into())
         );
-        assert_eq!(voice_name("de_DE-thorsten_emotional-medium"), "Thorsten Emotional");
+        assert_eq!(
+            voice_name("de_DE-thorsten_emotional-medium"),
+            "Thorsten Emotional"
+        );
     }
 
     #[test]
