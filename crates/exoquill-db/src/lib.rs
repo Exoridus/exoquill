@@ -225,8 +225,11 @@ impl Database {
         // Keep an un-named note's title in sync with its content (the first
         // meaningful line), so dictation/OCR/typing all surface a useful title.
         if note.title_auto {
-            note.title =
-                generate_title(&note.content_markdown, NoteSource::Manual, &title_timestamp());
+            note.title = generate_title(
+                &note.content_markdown,
+                NoteSource::Manual,
+                &title_timestamp(),
+            );
         }
         note.updated_at = now_rfc3339();
 
@@ -712,7 +715,10 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let created = db.create_note(note("bye")).unwrap();
         assert!(db.delete_note(&created.id).unwrap());
-        assert!(db.list_notes(NoteScope::Active, NoteSort::Modified).unwrap().is_empty());
+        assert!(db
+            .list_notes(NoteScope::Active, NoteSort::Modified)
+            .unwrap()
+            .is_empty());
         // Second delete is a no-op.
         assert!(!db.delete_note(&created.id).unwrap());
         // Row still exists (soft delete) but updates are rejected.
@@ -743,7 +749,10 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         db.create_note(note("Rust und WebGPU")).unwrap();
         db.create_note(note("Einkaufsliste")).unwrap();
-        assert_eq!(db.search_notes("webgpu", NoteScope::Active).unwrap().len(), 1);
+        assert_eq!(
+            db.search_notes("webgpu", NoteScope::Active).unwrap().len(),
+            1
+        );
         // Wildcards are treated literally, not as SQL LIKE patterns.
         assert_eq!(db.search_notes("%", NoteScope::Active).unwrap().len(), 0);
     }
@@ -769,8 +778,16 @@ mod tests {
         assert_eq!(ids(NoteScope::Trash), vec![trash.id.clone()]);
 
         // Search is scoped too: a term in the archived note isn't found in Active.
-        assert!(db.search_notes("archived", NoteScope::Active).unwrap().is_empty());
-        assert_eq!(db.search_notes("archived", NoteScope::Archived).unwrap().len(), 1);
+        assert!(db
+            .search_notes("archived", NoteScope::Active)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            db.search_notes("archived", NoteScope::Archived)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -793,7 +810,12 @@ mod tests {
         let n = db.create_note(note("oops")).unwrap();
         db.delete_note(&n.id).unwrap();
         assert!(db.restore_note(&n.id).unwrap());
-        assert_eq!(db.list_notes(NoteScope::Active, NoteSort::Modified).unwrap().len(), 1);
+        assert_eq!(
+            db.list_notes(NoteScope::Active, NoteSort::Modified)
+                .unwrap()
+                .len(),
+            1
+        );
         // Restoring a live note is a no-op.
         assert!(!db.restore_note(&n.id).unwrap());
     }

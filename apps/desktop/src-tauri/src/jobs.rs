@@ -95,9 +95,7 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
             .and_then(|slot| slot.as_ref().and_then(|server| server.client()))
             .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
         Some("xtts") => {
-            if state.xtts_paths.is_none() {
-                return None;
-            }
+            state.xtts_paths.as_ref()?;
             state
                 .xtts_server
                 .lock()
@@ -404,7 +402,12 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
             let Some((python, script)) = state.xtts_paths.clone() else {
                 return;
             };
-            if state.xtts_server.lock().map(|s| s.is_some()).unwrap_or(false) {
+            if state
+                .xtts_server
+                .lock()
+                .map(|s| s.is_some())
+                .unwrap_or(false)
+            {
                 return; // already warm
             }
             if state.xtts_warming.swap(true, Ordering::SeqCst) {
@@ -425,7 +428,12 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
             let Some((python, script, voices)) = state.zonos_paths.clone() else {
                 return;
             };
-            if state.zonos_server.lock().map(|s| s.is_some()).unwrap_or(false) {
+            if state
+                .zonos_server
+                .lock()
+                .map(|s| s.is_some())
+                .unwrap_or(false)
+            {
                 return;
             }
             if state.zonos_warming.swap(true, Ordering::SeqCst) {
@@ -618,7 +626,11 @@ pub fn export_audio(
     let engine = base64::engine::general_purpose::STANDARD;
     let mut pcm: Vec<u8> = Vec::new();
     for seg in &segments {
-        pcm.extend_from_slice(&engine.decode(seg).map_err(|e| format!("decode audio: {e}"))?);
+        pcm.extend_from_slice(
+            &engine
+                .decode(seg)
+                .map_err(|e| format!("decode audio: {e}"))?,
+        );
     }
     if pcm.is_empty() {
         return Err("no audio to export".into());

@@ -13,7 +13,8 @@ use crate::provider::{
     ProviderResult,
 };
 
-pub(crate) const DEFAULT_SYSTEM: &str = "Du bist ein präziser Text-Formatierer für Diktate und OCR-Text. \
+pub(crate) const DEFAULT_SYSTEM: &str =
+    "Du bist ein präziser Text-Formatierer für Diktate und OCR-Text. \
 Korrigiere Rechtschreibung, Zeichensetzung und offensichtliche Erkennungsfehler und verbessere \
 die Lesbarkeit mit sauberem Markdown. Erfinde keine neuen Inhalte, bewahre Bedeutung und \
 Fachbegriffe (Produkt- und Bibliotheksnamen). Gib ausschließlich den formatierten Text zurück.";

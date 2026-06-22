@@ -19,8 +19,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use crate::provider::{
-    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider,
-    ProviderError, ProviderResult,
+    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement,
+    Provider, ProviderError, ProviderResult,
 };
 use crate::tts::{detect_language, TextToSpeechProvider, TtsRequest, TtsResponse, TtsVoice};
 

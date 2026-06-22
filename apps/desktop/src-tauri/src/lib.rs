@@ -243,8 +243,12 @@ fn resolve_xtts_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
     if std::env::var_os("EXOQUILL_XTTS_URL").is_some() {
         return None;
     }
-    let python = std::env::var("EXOQUILL_XTTS_PYTHON").map(PathBuf::from).ok()?;
-    let script = std::env::var("EXOQUILL_XTTS_SCRIPT").map(PathBuf::from).ok()?;
+    let python = std::env::var("EXOQUILL_XTTS_PYTHON")
+        .map(PathBuf::from)
+        .ok()?;
+    let script = std::env::var("EXOQUILL_XTTS_SCRIPT")
+        .map(PathBuf::from)
+        .ok()?;
     (python.exists() && script.exists()).then_some((python, script))
 }
 

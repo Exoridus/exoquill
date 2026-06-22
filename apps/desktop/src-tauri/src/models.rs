@@ -190,7 +190,8 @@ pub fn install_model(app: AppHandle, id: String) -> Result<(), String> {
             if n == 0 {
                 break;
             }
-            out.write_all(&buf[..n]).map_err(|e| format!("Schreiben: {e}"))?;
+            out.write_all(&buf[..n])
+                .map_err(|e| format!("Schreiben: {e}"))?;
             downloaded += n as u64;
             let _ = app.emit(
                 "model_progress",
