@@ -260,7 +260,7 @@ is the next one to wire** (the MIT high-quality slot, the cleanest successor to 
 | 1 | **Safe default** | **Piper + good German voice** (Thorsten) | GPL-3.0 runtime / CC0 voice | **bundle** | Fast, robust, local, minimal fuss; the proven D2 default. **Wired.** |
 | 2 | **Modern fast default / Fast Mode** | **Kokoro-82M** | Apache-2.0 | download | Tiny, permissive, more natural than classic mini-TTS. **Blocker:** no *official* German (community voice only) — must pass a German quality bar before it can be a default (see D2). |
 | 3 | **Best optional high-quality backend** | **Chatterbox Multilingual (v3)** | **MIT** | download (GPU) | 23+ languages incl. German, voice cloning, emotion, realistic product integration. MIT → first multilingual option that is *redistributable + commercial-OK*. **Caveat:** embeds a Resemble "Perth" neural watermark in every output by default, no documented opt-out — disclose this for an offline/privacy tool. **Adopted, next to wire.** |
-| 4 | **Power backend for GPU users** | **Qwen3-TTS** (0.6B / 1.7B) | Apache-2.0 (open weights, not API-only) | download (GPU) | German among 10 languages, streaming, voice design. Open weights on HF (~2.5 / 4.5 GB); Windows-native path exists. |
+| 4 | **Power backend for GPU users** | **Qwen3-TTS** (0.6B / 1.7B) | Apache-2.0 (open weights, not API-only) | download (GPU) | German among 10 languages, streaming, voice design. Open weights on HF (~2.5 / 4.5 GB); Windows-native path exists. **Wired** (experimentell, GPU; eingebaute Sprecher + Cloning). |
 | 5 | **Experimental premium GPU backend** | **ZONOS2** | Apache-2.0 (HF model card; "MIT" in some write-ups is wrong) | download (GPU) | Strong cloning, 8B-MoE / 900M active. **Hard caveat:** *Linux-only (x86_64) + CUDA*, ~20× slower than realtime on an 8 GB consumer GPU → only viable via WSL2 / strong GPU; unusable for live read-aloud on typical hardware. Keep behind the existing Zonos slot until a Windows path exists. |
 | 6 | **Server / research backend** | **CosyVoice 3** | Apache-2.0 (lineage) | download (GPU) | Strong, multilingual, ~150 ms class, but higher integration/deployment cost; German support unconfirmed. Lower priority. |
 | 7 | **Support only, do not bundle** | **F5-TTS, XTTS-v2, Fish Speech 1.5** | NC / custom (XTTS = CPML) | **gated** | Technically relevant but non-commercial/custom licenses → never a clean bundle core. XTTS is already wired as a `gated` test-only sidecar (D10). |
@@ -278,9 +278,9 @@ maturity/integration cost. ZONOS2 is permissive but platform-blocked today.
   before promoting Kokoro to the Fast-Mode default (D2 still says "too risky" until then).
 - **GPU realism:** ranks 3–6 all want a GPU; document the CPU-fallback story (Piper stays the
   no-GPU default) and per-backend hardware notes in the model manager.
-- **Catalog entries:** add Chatterbox (and later Qwen3-TTS) to `models.json` as `download`
-  runtime entries with a `setup` script, mirroring the Zonos entry; never bundle weights until
-  installer-size + watermark questions are resolved.
+- **Catalog entries:** add Chatterbox to `models.json` as a `download` runtime entry with a
+  `setup` script, mirroring the Zonos entry; never bundle weights until installer-size +
+  watermark questions are resolved. ✓ Qwen3-TTS catalog entry added (Task 8).
 
 *Informational, not legal advice — re-verify each weight license (and the Chatterbox watermark
 terms) against its canonical LICENSE/model card before a commercial release.*
