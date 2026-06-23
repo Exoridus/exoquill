@@ -17,15 +17,15 @@
 # first synthesis downloads the model weights into the Hugging Face cache.
 
 param(
-    [string]$Cuda = "cu128"
+    [string]$Cuda = "cu128",
+    [string]$Root = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path $PSScriptRoot -Parent
-$venv = Join-Path $root ".venv-zonos"
+$venv = Join-Path $Root ".venv-zonos"
 $py = Join-Path $venv "Scripts\python.exe"
-$src = Join-Path $root ".zonos-src"
-$voices = Join-Path $root "zonos-voices"
+$src = Join-Path $Root ".zonos-src"
+$voices = Join-Path $Root "zonos-voices"
 
 if (-not (Test-Path $py)) {
     Write-Host "Creating venv at $venv (Python 3.12) ..."

@@ -12,14 +12,14 @@
 # ExoQuill at it via dev.ps1 (EXOQUILL_CHATTERBOX_*).
 
 param(
-    [string]$Cuda = "cu128"
+    [string]$Cuda = "cu128",
+    [string]$Root = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path $PSScriptRoot -Parent
-$venv = Join-Path $root ".venv-chatterbox"
+$venv = Join-Path $Root ".venv-chatterbox"
 $py = Join-Path $venv "Scripts\python.exe"
-$voices = Join-Path $root "chatterbox-voices"
+$voices = Join-Path $Root "chatterbox-voices"
 
 if (-not (Test-Path $py)) {
     Write-Host "Creating venv at $venv (Python 3.12) ..."

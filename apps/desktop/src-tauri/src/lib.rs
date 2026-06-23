@@ -265,27 +265,27 @@ fn env_sidecar(py: &str, script: &str, voices: &str) -> Option<(PathBuf, PathBuf
     (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
 }
 
-fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
+fn resolve_zonos_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
     env_sidecar(
         "EXOQUILL_ZONOS_PYTHON",
         "EXOQUILL_ZONOS_SCRIPT",
         "EXOQUILL_ZONOS_VOICES",
     )
     // Fall back to a sidecar installed in-app via `run_setup` (conventional layout).
-    .or_else(|| crate::models::conventional_sidecar("zonos"))
+    .or_else(|| crate::models::conventional_sidecar("zonos", app))
 }
 
 /// Python + `chatterbox-server.py` + a reference-voice folder, from
 /// `EXOQUILL_CHATTERBOX_PYTHON` / `EXOQUILL_CHATTERBOX_SCRIPT` / `EXOQUILL_CHATTERBOX_VOICES`
 /// (set by dev.ps1). `None` when not configured. Chatterbox weights are MIT-licensed,
 /// but it needs a CUDA GPU, so it's opt-in via the env vars.
-fn resolve_chatterbox_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
+fn resolve_chatterbox_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
     env_sidecar(
         "EXOQUILL_CHATTERBOX_PYTHON",
         "EXOQUILL_CHATTERBOX_SCRIPT",
         "EXOQUILL_CHATTERBOX_VOICES",
     )
-    .or_else(|| crate::models::conventional_sidecar("chatterbox"))
+    .or_else(|| crate::models::conventional_sidecar("chatterbox", app))
 }
 
 /// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar) with all
@@ -495,8 +495,8 @@ pub fn run() {
             let whisper_server_paths = resolve_whisper_server_paths(app);
             let tts = resolve_tts_provider(app);
             let xtts_paths = resolve_xtts_paths(app);
-            let zonos_paths = resolve_zonos_paths(app);
-            let chatterbox_paths = resolve_chatterbox_paths(app);
+            let zonos_paths = resolve_zonos_paths(&app.handle().clone());
+            let chatterbox_paths = resolve_chatterbox_paths(&app.handle().clone());
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,

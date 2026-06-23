@@ -104,18 +104,35 @@ pub(crate) fn sidecar_root(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// A sidecar installed by `run_setup` at the conventional layout, if its venv
-/// python exists: `(python, server script, voices dir)`. The voices dir may be
-/// empty until the user adds reference clips, but the venv proves it's installed.
-pub(crate) fn conventional_sidecar(name: &str) -> Option<(PathBuf, PathBuf, PathBuf)> {
+/// The writable base that holds installed sidecars in release: each setup script
+/// puts its `.venv-<name>` + `<name>-voices` here. `app_data_dir()/sidecars`.
+pub(crate) fn sidecar_data_root(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("sidecars"))
+}
+
+/// A sidecar installed by `run_setup`, if its venv python exists, as
+/// `(python, server script, voices dir)`. Checks the writable app-data base
+/// first (release), then the dev repo-root walk-up. The server script is resolved
+/// from the repo/resource tree; venv + voices come from whichever base has the venv.
+pub(crate) fn conventional_sidecar(
+    name: &str,
+    app: &AppHandle,
+) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let script = resolve_repo_path(app, &format!("scripts/{name}-server.py"))?;
+    // 1) writable app-data base (release / in-app install)
+    if let Some(base) = sidecar_data_root(app) {
+        let python = base.join(format!(".venv-{name}/Scripts/python.exe"));
+        if python.exists() {
+            return Some((python, script.clone(), base.join(format!("{name}-voices"))));
+        }
+    }
+    // 2) dev repo-root walk-up (existing .venv-* next to scripts/<name>-server.py)
     let root = sidecar_root(name)?;
     let python = root.join(format!(".venv-{name}/Scripts/python.exe"));
-    if !python.exists() {
-        return None;
+    if python.exists() {
+        return Some((python, script, root.join(format!("{name}-voices"))));
     }
-    let script = root.join(format!("scripts/{name}-server.py"));
-    let voices = root.join(format!("{name}-voices"));
-    Some((python, script, voices))
+    None
 }
 
 fn catalog() -> Catalog {
@@ -187,7 +204,7 @@ fn entry_status(app: &AppHandle, entry: &ModelEntry) -> (bool, u64) {
             .and_then(|k| std::env::var(k).ok())
             .map(|p| PathBuf::from(p).exists())
             .unwrap_or(false);
-        let via_setup = conventional_sidecar(&entry.provider).is_some();
+        let via_setup = conventional_sidecar(&entry.provider, app).is_some();
         return (via_env || via_setup, 0);
     }
     let root = models_root(app);
@@ -373,13 +390,15 @@ pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
 
     // Run via PowerShell, merging all streams (`*>&1`) so the install log is complete.
     let mut child = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &format!("& '{}' *>&1", script.display()),
-        ])
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &{
+            match sidecar_data_root(&app) {
+                Some(root) => {
+                    let _ = std::fs::create_dir_all(&root);
+                    format!("& '{}' -Root '{}' *>&1", script.display(), root.display())
+                }
+                None => format!("& '{}' *>&1", script.display()),
+            }
+        }])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -399,7 +418,7 @@ pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
         }
     }
     if status.success() {
-        emit("✓ Einrichtung abgeschlossen — Backend nach Neustart aktiv.".to_string());
+        emit("✓ Einrichtung abgeschlossen — Backend aktiv.".to_string());
         Ok(())
     } else {
         Err(format!("Setup fehlgeschlagen (Code {:?}).", status.code()))

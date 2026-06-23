@@ -18,12 +18,12 @@
 # accepts the CPML via COQUI_TOS_AGREED=1 (set by the server).
 
 param(
-    [string]$Cuda = "cu128"
+    [string]$Cuda = "cu128",
+    [string]$Root = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path $PSScriptRoot -Parent
-$venv = Join-Path $root ".venv-xtts"
+$venv = Join-Path $Root ".venv-xtts"
 $py = Join-Path $venv "Scripts\python.exe"
 
 if (-not (Test-Path $py)) {
