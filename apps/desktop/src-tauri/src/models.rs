@@ -391,12 +391,14 @@ pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
     // Run via PowerShell, merging all streams (`*>&1`) so the install log is complete.
     let mut child = Command::new("powershell")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &{
+            let script_q = script.display().to_string().replace('\'', "''");
             match sidecar_data_root(&app) {
                 Some(root) => {
                     let _ = std::fs::create_dir_all(&root);
-                    format!("& '{}' -Root '{}' *>&1", script.display(), root.display())
+                    let root_q = root.display().to_string().replace('\'', "''");
+                    format!("& '{script_q}' -Root '{root_q}' *>&1")
                 }
-                None => format!("& '{}' *>&1", script.display()),
+                None => format!("& '{script_q}' *>&1"),
             }
         }])
         .stdout(Stdio::piped())
