@@ -8,7 +8,6 @@
 //! isolated process (decisions D8), now persistent instead of per-call.
 
 use std::io::{BufRead, BufReader};
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -18,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::formatter::{FormatRequest, FormatResponse, FormatterProvider};
 use crate::llama::DEFAULT_SYSTEM;
 use crate::provider::{
-    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement,
-    Provider, ProviderError, ProviderResult,
+    below_normal_priority, free_port, CancelToken, Capability, Health, LicenseInfo,
+    ModelRequirement, Provider, ProviderError, ProviderResult,
 };
 
 /// A running `llama-server` child + the localhost URL it serves. Dropping it
@@ -141,18 +140,6 @@ fn llama_parallel() -> u32 {
         .and_then(|v| v.trim().parse::<u32>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(4)
-}
-
-/// Reserve a free localhost TCP port by binding to :0 and reading it back. The
-/// port is released on drop; llama-server re-binds it (a tiny race we accept).
-fn free_port() -> ProviderResult<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| ProviderError::Runtime(format!("reserve port: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| ProviderError::Runtime(format!("read port: {e}")))?
-        .port();
-    Ok(port)
 }
 
 /// Formatting against a running [`LlamaServer`]'s `/v1/chat/completions` endpoint.

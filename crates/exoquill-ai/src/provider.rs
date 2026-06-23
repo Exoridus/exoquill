@@ -7,7 +7,9 @@
 //! processes (decisions D8).
 
 use std::fmt;
+use std::net::TcpListener;
 use std::process::Command;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +30,45 @@ pub(crate) fn below_normal_priority(command: &mut Command) {
     }
     #[cfg(not(windows))]
     let _ = command;
+}
+
+/// Reserve a free localhost TCP port by binding to :0 and reading it back. The
+/// port is released on drop; the spawned server re-binds it (a tiny race we
+/// accept). Shared by every sidecar that runs a localhost HTTP server.
+pub(crate) fn free_port() -> ProviderResult<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| ProviderError::Runtime(format!("reserve port: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| ProviderError::Runtime(format!("read port: {e}")))?
+        .port();
+    Ok(port)
+}
+
+/// A quick liveness probe for a localhost sidecar: a short-timeout `GET` on its
+/// base URL. `Ready` only on a 2xx; it never blocks on a dead sidecar (unlike the
+/// long-timeout synthesis client). Shared by the HTTP TTS sidecars' `health_check`.
+pub(crate) fn probe_health(base_url: &str) -> Health {
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            return Health::Unavailable {
+                reason: format!("probe client: {e}"),
+            }
+        }
+    };
+    match client.get(base_url).send() {
+        Ok(resp) if resp.status().is_success() => Health::Ready,
+        Ok(resp) => Health::Unavailable {
+            reason: format!("sidecar returned {}", resp.status()),
+        },
+        Err(e) => Health::Unavailable {
+            reason: format!("sidecar unreachable: {e}"),
+        },
+    }
 }
 
 /// A capability a provider advertises to the UI and scheduler.

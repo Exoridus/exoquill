@@ -11,7 +11,6 @@
 //! but the weights must not be redistributed in ExoQuill's GPL build. Enable by
 //! running the sidecar and setting `EXOQUILL_XTTS_URL`; otherwise Piper is used.
 
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -19,8 +18,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use crate::provider::{
-    below_normal_priority, CancelToken, Capability, Health, LicenseInfo, ModelRequirement,
-    Provider, ProviderError, ProviderResult,
+    below_normal_priority, free_port, probe_health, CancelToken, Capability, Health, LicenseInfo,
+    ModelRequirement, Provider, ProviderError, ProviderResult,
 };
 use crate::tts::{detect_language, TextToSpeechProvider, TtsRequest, TtsResponse, TtsVoice};
 
@@ -156,17 +155,6 @@ impl Drop for XttsServer {
     }
 }
 
-/// Reserve a free localhost TCP port by binding to :0 and reading it back.
-fn free_port() -> ProviderResult<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| ProviderError::Runtime(format!("reserve port: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| ProviderError::Runtime(format!("read port: {e}")))?
-        .port();
-    Ok(port)
-}
-
 /// Thin client for a running XTTS-v2 sidecar.
 pub struct XttsTts {
     base_url: String,
@@ -192,7 +180,10 @@ impl XttsTts {
             .timeout(Duration::from_secs(2))
             .build()
             .ok()?;
-        probe.get(&base_url).send().ok()?;
+        let resp = probe.get(&base_url).send().ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120))
             .build()
@@ -256,12 +247,7 @@ impl Provider for XttsTts {
         }
     }
     fn health_check(&self) -> Health {
-        match self.client.get(&self.base_url).send() {
-            Ok(_) => Health::Ready,
-            Err(e) => Health::Unavailable {
-                reason: format!("xtts sidecar unreachable: {e}"),
-            },
-        }
+        probe_health(&self.base_url)
     }
 }
 

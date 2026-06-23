@@ -7,7 +7,6 @@
 //! in-progress utterance for live partial transcripts. Still an isolated process
 //! (decisions D8), now persistent instead of per-call.
 
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -15,8 +14,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::provider::{
-    CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider, ProviderError,
-    ProviderResult,
+    free_port, CancelToken, Capability, Health, LicenseInfo, ModelRequirement, Provider,
+    ProviderError, ProviderResult,
 };
 use crate::stt::{SpeechToTextProvider, SttRequest, SttResponse};
 use crate::whisper::WhisperStt;
@@ -91,18 +90,6 @@ impl Drop for WhisperServer {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
-}
-
-/// Reserve a free localhost TCP port by binding to :0 and reading it back. The
-/// port is released on drop; whisper-server re-binds it (a tiny race we accept).
-fn free_port() -> ProviderResult<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| ProviderError::Runtime(format!("reserve port: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| ProviderError::Runtime(format!("read port: {e}")))?
-        .port();
-    Ok(port)
 }
 
 /// Speech-to-text against a running [`WhisperServer`]'s `/inference` endpoint.
