@@ -18,7 +18,54 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::notes::AppState;
+
 const CATALOG_JSON: &str = include_str!("../models.json");
+
+/// After a sidecar/model install, re-resolve the affected provider and store it
+/// into the live `AppState` so the backend is usable without an app restart.
+/// `provider` is the catalog entry's `provider` field. Emits `tts_changed` so the
+/// UI re-fetches the voice list. Best-effort: a missing state/handle is a no-op.
+fn reactivate_provider(app: &AppHandle, provider: &str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    match provider {
+        "xtts" => {
+            let resolved = crate::resolve_xtts_paths(app);
+            if let Ok(mut slot) = state.xtts_paths.lock() {
+                *slot = resolved;
+            }
+        }
+        "zonos" => {
+            let resolved = crate::resolve_zonos_paths(app);
+            if let Ok(mut slot) = state.zonos_paths.lock() {
+                *slot = resolved;
+            }
+        }
+        "chatterbox" => {
+            let resolved = crate::resolve_chatterbox_paths(app);
+            if let Ok(mut slot) = state.chatterbox_paths.lock() {
+                *slot = resolved;
+            }
+        }
+        "piper" => {
+            let resolved = crate::resolve_tts_provider(app);
+            if let Ok(mut slot) = state.tts.lock() {
+                *slot = resolved;
+            }
+        }
+        #[cfg(feature = "kokoro")]
+        "kokoro" => {
+            let resolved = crate::resolve_kokoro_native(app);
+            if let Ok(mut slot) = state.kokoro.lock() {
+                *slot = resolved;
+            }
+        }
+        _ => {}
+    }
+    let _ = app.emit("tts_changed", ());
+}
 
 #[derive(Deserialize)]
 struct Catalog {
@@ -307,6 +354,8 @@ pub fn install_model(app: AppHandle, id: String) -> Result<(), String> {
         drop(out);
         fs::rename(&tmp, &dest).map_err(|e| format!("Abschließen: {e}"))?;
     }
+    // Newly downloaded Piper voices / Kokoro assets activate without a restart.
+    reactivate_provider(&app, &entry.provider);
     Ok(())
 }
 
@@ -371,6 +420,7 @@ pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
         .into_iter()
         .find(|e| e.id == id)
         .ok_or_else(|| format!("unbekanntes Modell: {id}"))?;
+    let provider = entry.provider.clone();
     let setup = entry
         .setup
         .ok_or_else(|| "Dieses Modell hat kein Setup-Skript.".to_string())?;
@@ -420,7 +470,8 @@ pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
         }
     }
     if status.success() {
-        emit("✓ Einrichtung abgeschlossen — Backend aktiv.".to_string());
+        reactivate_provider(&app, &provider);
+        emit("✓ Einrichtung abgeschlossen — Backend aktiv (kein Neustart nötig).".to_string());
         Ok(())
     } else {
         Err(format!("Setup fehlgeschlagen (Code {:?}).", status.code()))
