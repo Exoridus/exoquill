@@ -113,6 +113,8 @@ def make_handler(model, clones):
                 text = (req.get("text") or "").strip()
                 speaker = req.get("speaker") or default_speaker
                 language = req.get("language") or "Auto"
+                # `speed` is accepted for protocol parity with the other sidecars but
+                # qwen-tts's generate_* API exposes no rate parameter, so it is unused.
                 if not text:
                     self._send(200, b"", "application/octet-stream")
                     return

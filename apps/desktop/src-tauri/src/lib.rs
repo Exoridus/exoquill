@@ -239,6 +239,9 @@ pub(crate) fn resolve_tts_provider(app: &AppHandle) -> Option<Arc<dyn TextToSpee
 /// (set by dev.ps1). `None` when not configured, or when `EXOQUILL_XTTS_URL`
 /// points at an already-running server (that takes precedence). The XTTS weights
 /// are non-commercial, so this is opt-in and never part of a bundled release.
+// XTTS is env-var-only (gated/test-only): it has no `conventional_sidecar` fallback,
+// so in-app setup / hot-activation does not apply to XTTS — the generic `-Root`
+// plumbing is a deliberate no-op for it.
 pub(crate) fn resolve_xtts_paths(_app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     if std::env::var_os("EXOQUILL_XTTS_URL").is_some() {
         return None;

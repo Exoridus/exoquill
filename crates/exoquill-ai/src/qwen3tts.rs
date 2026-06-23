@@ -171,8 +171,12 @@ impl Qwen3Tts {
                 if !is_wav {
                     return None;
                 }
-                if !path.with_extension("txt").exists() {
-                    return None; // no transcript → not usable for Qwen3 cloning
+                let txt = path.with_extension("txt");
+                let has_transcript = std::fs::read_to_string(&txt)
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false);
+                if !has_transcript {
+                    return None; // missing or empty transcript → not usable for Qwen3 cloning
                 }
                 let stem = path.file_stem()?.to_string_lossy().into_owned();
                 Some(TtsVoice {
@@ -304,6 +308,9 @@ mod tests {
         std::fs::write(dir.join("dima.txt"), "hallo welt").unwrap();
         // clip WITHOUT transcript → skipped
         std::fs::write(dir.join("nope.wav"), b"RIFFxxxx").unwrap();
+        // clip WITH an empty transcript → skipped (sidecar requires non-empty ref_text)
+        std::fs::write(dir.join("empty.wav"), b"RIFFxxxx").unwrap();
+        std::fs::write(dir.join("empty.txt"), "").unwrap();
         // non-wav → ignored
         std::fs::write(dir.join("readme.md"), b"x").unwrap();
 

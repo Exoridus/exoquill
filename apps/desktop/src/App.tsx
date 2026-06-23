@@ -1106,6 +1106,20 @@ export default function App() {
     };
   }, [newNote]);
 
+  // A backend was installed/activated in-app (run_setup / install_model emit
+  // `tts_changed`): refresh the voice list so new voices appear without a restart.
+  useEffect(() => {
+    const unlisten = listen("tts_changed", () => {
+      void api
+        .listTtsVoices()
+        .then(setVoices)
+        .catch(() => {});
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Region OCR (Ctrl+Alt+O snipping tool): the overlay window forwards its
   // cropped image + recognized layout here; open the selectable OCR overlay.
   useEffect(() => {
