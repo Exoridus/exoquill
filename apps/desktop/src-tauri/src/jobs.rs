@@ -14,6 +14,13 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::notes::AppState;
 
+/// Clone the provider currently in a mutex-guarded slot, if any (poisoned → None).
+fn slot_provider(
+    slot: &std::sync::Mutex<Option<Arc<dyn TextToSpeechProvider>>>,
+) -> Option<Arc<dyn TextToSpeechProvider>> {
+    slot.lock().ok().and_then(|g| g.clone())
+}
+
 /// Delivers core events to the frontend over Tauri's event channel.
 pub struct TauriEventSink {
     app: AppHandle,
@@ -87,7 +94,7 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
     // play (and cache) the wrong — Piper — voice while the sidecar is still
     // warming. Return `None` instead so the UI knows it isn't ready yet.
     match provider {
-        Some("piper") => state.tts.clone(),
+        Some("piper") => slot_provider(&state.tts),
         Some("zonos") => state
             .zonos_server
             .lock()
@@ -102,9 +109,9 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
             .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
         // Kokoro is a native provider (no sidecar): route straight to it.
         #[cfg(feature = "kokoro")]
-        Some("kokoro") => state.kokoro.clone(),
+        Some("kokoro") => slot_provider(&state.kokoro),
         Some("xtts") => {
-            state.xtts_paths.as_ref()?;
+            state.xtts_paths.lock().ok().and_then(|g| g.clone())?;
             state
                 .xtts_server
                 .lock()
@@ -114,14 +121,19 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
         }
         // Auto (no explicit backend): prefer a warm XTTS sidecar, else Piper.
         _ => {
-            if state.xtts_paths.is_some() {
+            if state
+                .xtts_paths
+                .lock()
+                .map(|g| g.is_some())
+                .unwrap_or(false)
+            {
                 if let Ok(slot) = state.xtts_server.lock() {
                     if let Some(client) = slot.as_ref().and_then(|server| server.client()) {
                         return Some(Arc::new(client) as Arc<dyn TextToSpeechProvider>);
                     }
                 }
             }
-            state.tts.clone()
+            slot_provider(&state.tts)
         }
     }
 }
@@ -408,7 +420,8 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
     use std::sync::atomic::Ordering;
     match provider {
         "xtts" => {
-            let Some((python, script)) = state.xtts_paths.clone() else {
+            let Some((python, script)) = state.xtts_paths.lock().ok().and_then(|g| g.clone())
+            else {
                 return;
             };
             if state
@@ -434,7 +447,9 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
             });
         }
         "zonos" => {
-            let Some((python, script, voices)) = state.zonos_paths.clone() else {
+            let Some((python, script, voices)) =
+                state.zonos_paths.lock().ok().and_then(|g| g.clone())
+            else {
                 return;
             };
             if state
@@ -460,7 +475,9 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
             });
         }
         "chatterbox" => {
-            let Some((python, script, voices)) = state.chatterbox_paths.clone() else {
+            let Some((python, script, voices)) =
+                state.chatterbox_paths.lock().ok().and_then(|g| g.clone())
+            else {
                 return;
             };
             if state
@@ -534,9 +551,13 @@ pub fn ensure_tts_ready(
         _ => false,
     };
     let configured = match provider.as_str() {
-        "xtts" => st.xtts_paths.is_some(),
-        "zonos" => st.zonos_paths.is_some(),
-        "chatterbox" => st.chatterbox_paths.is_some(),
+        "xtts" => st.xtts_paths.lock().map(|g| g.is_some()).unwrap_or(false),
+        "zonos" => st.zonos_paths.lock().map(|g| g.is_some()).unwrap_or(false),
+        "chatterbox" => st
+            .chatterbox_paths
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false),
         _ => true,
     };
 
@@ -756,23 +777,26 @@ pub async fn tts_speak(
 /// `provider`, which the UI passes back to [`tts_speak`].
 #[tauri::command(async)]
 pub fn list_tts_voices(state: State<AppState>) -> Vec<TtsVoice> {
-    let mut voices = state
-        .tts
-        .as_ref()
+    let mut voices = slot_provider(&state.tts)
         .map(|tts| tts.voices())
         .unwrap_or_default();
-    if state.xtts_paths.is_some() {
+    if state
+        .xtts_paths
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false)
+    {
         voices.extend(exoquill_ai::XttsTts::voices_static());
     }
-    if let Some((_, _, voices_dir)) = &state.zonos_paths {
-        voices.extend(exoquill_ai::ZonosTts::voices_in_dir(voices_dir));
+    if let Some((_, _, voices_dir)) = state.zonos_paths.lock().ok().and_then(|g| g.clone()) {
+        voices.extend(exoquill_ai::ZonosTts::voices_in_dir(&voices_dir));
     }
-    if let Some((_, _, voices_dir)) = &state.chatterbox_paths {
-        voices.extend(exoquill_ai::ChatterboxTts::voices_in_dir(voices_dir));
+    if let Some((_, _, voices_dir)) = state.chatterbox_paths.lock().ok().and_then(|g| g.clone()) {
+        voices.extend(exoquill_ai::ChatterboxTts::voices_in_dir(&voices_dir));
     }
     // Native Kokoro: list its loaded voices directly (no sidecar to query).
     #[cfg(feature = "kokoro")]
-    if let Some(kokoro) = state.kokoro.as_ref() {
+    if let Some(kokoro) = slot_provider(&state.kokoro) {
         voices.extend(kokoro.voices());
     }
     voices
@@ -825,7 +849,7 @@ pub async fn list_model_info(app: AppHandle) -> Vec<ModelInfo> {
             describe("ocr", state.ocr.as_ref()),
             describe("formatter", state.formatter.as_ref()),
         ];
-        match state.tts.as_ref() {
+        match slot_provider(&state.tts) {
             Some(tts) => out.push(describe("tts", tts.as_ref())),
             None => out.push(ModelInfo {
                 feature: "tts".into(),

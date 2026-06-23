@@ -45,10 +45,10 @@ pub struct AppState {
     /// `None` when no local TTS is available; the UI falls back to system speech.
     /// This is the Piper (or external-URL XTTS) provider resolved at setup; it's
     /// the fallback when the auto-spawned XTTS sidecar isn't running.
-    pub tts: Option<Arc<dyn TextToSpeechProvider>>,
+    pub tts: Mutex<Option<Arc<dyn TextToSpeechProvider>>>,
     /// `(python, xtts-server.py)` paths to auto-spawn the XTTS sidecar, or `None`
     /// when not configured (then TTS uses `tts` above). Experimental / dev.
-    pub xtts_paths: Option<(PathBuf, PathBuf)>,
+    pub xtts_paths: Mutex<Option<(PathBuf, PathBuf)>>,
     /// The XTTS sidecar, warmed up on demand (when the UI selects the XTTS
     /// backend) and kept alive. Dropping it kills the Python process. Not started
     /// at launch — that's what froze the UI when two sidecars loaded at once.
@@ -59,7 +59,7 @@ pub struct AppState {
     /// `(python, zonos-server.py, voices_dir)` to spawn the Zonos sidecar, or
     /// `None` when not configured. `voices_dir` holds the reference `.wav` clips
     /// (one per voice). Apache-2.0 weights, but needs a CUDA GPU.
-    pub zonos_paths: Option<(PathBuf, PathBuf, PathBuf)>,
+    pub zonos_paths: Mutex<Option<(PathBuf, PathBuf, PathBuf)>>,
     /// The Zonos sidecar, warmed up on demand (when the UI selects Zonos) and
     /// kept alive. Dropping it kills the Python process.
     pub zonos_server: Mutex<Option<exoquill_ai::ZonosServer>>,
@@ -68,7 +68,7 @@ pub struct AppState {
     /// `(python, chatterbox-server.py, voices_dir)` to spawn the Chatterbox sidecar, or
     /// `None` when not configured. `voices_dir` holds the reference `.wav` clips
     /// (one per voice). MIT-licensed weights, but needs a CUDA GPU.
-    pub chatterbox_paths: Option<(PathBuf, PathBuf, PathBuf)>,
+    pub chatterbox_paths: Mutex<Option<(PathBuf, PathBuf, PathBuf)>>,
     /// The Chatterbox sidecar, warmed up on demand (when the UI selects Chatterbox) and
     /// kept alive. Dropping it kills the Python process.
     pub chatterbox_server: Mutex<Option<exoquill_ai::ChatterboxServer>>,
@@ -80,7 +80,7 @@ pub struct AppState {
     /// the app is built with the `kokoro` feature; like the Piper `tts` field, it
     /// needs no warm-up — synthesis runs directly on it.
     #[cfg(feature = "kokoro")]
-    pub kokoro: Option<Arc<dyn TextToSpeechProvider>>,
+    pub kokoro: Mutex<Option<Arc<dyn TextToSpeechProvider>>>,
     /// Cancellation for the in-progress read-aloud speech-prep pass. `begin_read`
     /// installs a fresh token, `cancel_read` trips it, and each `prepare_speech`
     /// chunk runs under it so a cancel stops the streaming llama generation

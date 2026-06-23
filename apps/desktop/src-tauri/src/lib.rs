@@ -202,7 +202,7 @@ fn resolve_silero_model_path(app: &App) -> Option<PathBuf> {
 /// names the default voice (dev); its parent directory is scanned for the rest.
 /// For release the bundled `piper-voices/` resource dir is scanned instead, with
 /// `de_DE-thorsten-medium` as the default.
-fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+pub(crate) fn resolve_tts_provider(app: &AppHandle) -> Option<Arc<dyn TextToSpeechProvider>> {
     // Experimental: prefer the XTTS-v2 sidecar when its URL is set and reachable
     // (multilingual DE/EN; non-commercial weights — test only, never bundled).
     // Falls through to Piper otherwise. Start it with scripts/xtts-server.py.
@@ -239,7 +239,7 @@ fn resolve_tts_provider(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
 /// (set by dev.ps1). `None` when not configured, or when `EXOQUILL_XTTS_URL`
 /// points at an already-running server (that takes precedence). The XTTS weights
 /// are non-commercial, so this is opt-in and never part of a bundled release.
-fn resolve_xtts_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
+pub(crate) fn resolve_xtts_paths(_app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     if std::env::var_os("EXOQUILL_XTTS_URL").is_some() {
         return None;
     }
@@ -265,7 +265,7 @@ fn env_sidecar(py: &str, script: &str, voices: &str) -> Option<(PathBuf, PathBuf
     (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
 }
 
-fn resolve_zonos_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
+pub(crate) fn resolve_zonos_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
     env_sidecar(
         "EXOQUILL_ZONOS_PYTHON",
         "EXOQUILL_ZONOS_SCRIPT",
@@ -279,7 +279,7 @@ fn resolve_zonos_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
 /// `EXOQUILL_CHATTERBOX_PYTHON` / `EXOQUILL_CHATTERBOX_SCRIPT` / `EXOQUILL_CHATTERBOX_VOICES`
 /// (set by dev.ps1). `None` when not configured. Chatterbox weights are MIT-licensed,
 /// but it needs a CUDA GPU, so it's opt-in via the env vars.
-fn resolve_chatterbox_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
+pub(crate) fn resolve_chatterbox_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
     env_sidecar(
         "EXOQUILL_CHATTERBOX_PYTHON",
         "EXOQUILL_CHATTERBOX_SCRIPT",
@@ -304,7 +304,7 @@ fn resolve_chatterbox_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBu
 /// we point `ORT_DYLIB_PATH` at the bundled `onnxruntime.dll` when the caller
 /// hasn't set it. Apache-2.0 weights; runs CPU-only (faster than real time).
 #[cfg(feature = "kokoro")]
-fn resolve_kokoro_native(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+pub(crate) fn resolve_kokoro_native(app: &AppHandle) -> Option<Arc<dyn TextToSpeechProvider>> {
     use exoquill_ai::{KokoroEngineConfig, KokoroLanguage};
 
     let resources = app.path().resource_dir().ok();
@@ -493,10 +493,11 @@ pub fn run() {
             let llama_server_paths = resolve_llama_server_paths(app);
             let stt = resolve_stt_provider(app);
             let whisper_server_paths = resolve_whisper_server_paths(app);
-            let tts = resolve_tts_provider(app);
-            let xtts_paths = resolve_xtts_paths(app);
-            let zonos_paths = resolve_zonos_paths(&app.handle().clone());
-            let chatterbox_paths = resolve_chatterbox_paths(&app.handle().clone());
+            let handle = app.handle().clone();
+            let tts = resolve_tts_provider(&handle);
+            let xtts_paths = resolve_xtts_paths(&handle);
+            let zonos_paths = resolve_zonos_paths(&handle);
+            let chatterbox_paths = resolve_chatterbox_paths(&handle);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
@@ -507,18 +508,18 @@ pub fn run() {
                 stt,
                 whisper_server_paths,
                 whisper_server: Mutex::new(None),
-                tts,
-                xtts_paths,
+                tts: Mutex::new(tts),
+                xtts_paths: Mutex::new(xtts_paths),
                 xtts_server: Mutex::new(None),
                 xtts_warming: std::sync::atomic::AtomicBool::new(false),
-                zonos_paths,
+                zonos_paths: Mutex::new(zonos_paths),
                 zonos_server: Mutex::new(None),
                 zonos_warming: std::sync::atomic::AtomicBool::new(false),
-                chatterbox_paths,
+                chatterbox_paths: Mutex::new(chatterbox_paths),
                 chatterbox_server: Mutex::new(None),
                 chatterbox_warming: std::sync::atomic::AtomicBool::new(false),
                 #[cfg(feature = "kokoro")]
-                kokoro: resolve_kokoro_native(app),
+                kokoro: Mutex::new(resolve_kokoro_native(&handle)),
                 read_cancel: Mutex::new(exoquill_core::CancelToken::new()),
                 dictation: Mutex::new(None),
                 region_capture: Mutex::new(None),
