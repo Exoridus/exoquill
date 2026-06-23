@@ -38,6 +38,9 @@ export interface SettingsWindowProps {
   modelBusy: string | null;
   onInstallModel: (item: CatalogItem) => void;
   onDeleteModel: (item: CatalogItem) => void;
+  onRunSetup: (item: CatalogItem) => void;
+  setupBusy: string | null;
+  setupLog: Record<string, string[]>;
 
   // --- Read-aloud tab ---
   backendLabel: string;
@@ -160,6 +163,9 @@ export function SettingsWindow(props: SettingsWindowProps) {
                 busyId={props.modelBusy}
                 onInstall={props.onInstallModel}
                 onDelete={props.onDeleteModel}
+                onSetup={props.onRunSetup}
+                setupBusy={props.setupBusy}
+                setupLog={props.setupLog}
               />
             )}
             {tab === "readaloud" && (

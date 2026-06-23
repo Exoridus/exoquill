@@ -297,3 +297,9 @@ export function installModel(id: string): Promise<void> {
 export function deleteModel(id: string): Promise<void> {
   return invoke("delete_model", { id });
 }
+
+/** Run a catalog entry's setup script in-app (TTS sidecar venv install). Streams
+ *  output line-by-line on the `setup_progress` event; resolves on success. */
+export function runSetup(id: string): Promise<void> {
+  return invoke("run_setup", { id });
+}

@@ -256,17 +256,23 @@ fn resolve_xtts_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
 /// `EXOQUILL_ZONOS_PYTHON` / `EXOQUILL_ZONOS_SCRIPT` / `EXOQUILL_ZONOS_VOICES`
 /// (set by dev.ps1). `None` when not configured. Zonos weights are Apache-2.0,
 /// but it needs a CUDA GPU, so it's opt-in via the env vars.
-fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
-    let python = std::env::var("EXOQUILL_ZONOS_PYTHON")
-        .map(PathBuf::from)
-        .ok()?;
-    let script = std::env::var("EXOQUILL_ZONOS_SCRIPT")
-        .map(PathBuf::from)
-        .ok()?;
-    let voices = std::env::var("EXOQUILL_ZONOS_VOICES")
-        .map(PathBuf::from)
-        .ok()?;
+/// `(python, server script, voices)` for a sidecar from its three dev env vars,
+/// or `None` if any is unset/missing.
+fn env_sidecar(py: &str, script: &str, voices: &str) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let python = std::env::var(py).map(PathBuf::from).ok()?;
+    let script = std::env::var(script).map(PathBuf::from).ok()?;
+    let voices = std::env::var(voices).map(PathBuf::from).ok()?;
     (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
+}
+
+fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    env_sidecar(
+        "EXOQUILL_ZONOS_PYTHON",
+        "EXOQUILL_ZONOS_SCRIPT",
+        "EXOQUILL_ZONOS_VOICES",
+    )
+    // Fall back to a sidecar installed in-app via `run_setup` (conventional layout).
+    .or_else(|| crate::models::conventional_sidecar("zonos"))
 }
 
 /// Python + `chatterbox-server.py` + a reference-voice folder, from
@@ -274,16 +280,12 @@ fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
 /// (set by dev.ps1). `None` when not configured. Chatterbox weights are MIT-licensed,
 /// but it needs a CUDA GPU, so it's opt-in via the env vars.
 fn resolve_chatterbox_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
-    let python = std::env::var("EXOQUILL_CHATTERBOX_PYTHON")
-        .map(PathBuf::from)
-        .ok()?;
-    let script = std::env::var("EXOQUILL_CHATTERBOX_SCRIPT")
-        .map(PathBuf::from)
-        .ok()?;
-    let voices = std::env::var("EXOQUILL_CHATTERBOX_VOICES")
-        .map(PathBuf::from)
-        .ok()?;
-    (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
+    env_sidecar(
+        "EXOQUILL_CHATTERBOX_PYTHON",
+        "EXOQUILL_CHATTERBOX_SCRIPT",
+        "EXOQUILL_CHATTERBOX_VOICES",
+    )
+    .or_else(|| crate::models::conventional_sidecar("chatterbox"))
 }
 
 /// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar). The model
@@ -511,6 +513,7 @@ pub fn run() {
             models::list_catalog,
             models::install_model,
             models::delete_model,
+            models::run_setup,
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::list_capture_sources,

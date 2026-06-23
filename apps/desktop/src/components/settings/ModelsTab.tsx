@@ -14,6 +14,12 @@ export interface ModelsTabProps {
   busyId: string | null;
   onInstall: (item: CatalogItem) => void;
   onDelete: (item: CatalogItem) => void;
+  /** Run a sidecar entry's setup script in-app (Python venv install). */
+  onSetup: (item: CatalogItem) => void;
+  /** The id whose setup is currently running, or null. */
+  setupBusy: string | null;
+  /** Live setup-script output, keyed by model id. */
+  setupLog: Record<string, string[]>;
 }
 
 // Maps a tier string to its i18n key.
@@ -41,6 +47,9 @@ export function ModelsTab({
   busyId,
   onInstall,
   onDelete,
+  onSetup,
+  setupBusy,
+  setupLog,
 }: ModelsTabProps) {
   const { t } = useI18n();
 
@@ -93,9 +102,16 @@ export function ModelsTab({
                       <span className="settings-card__title">{m.displayName}</span>
                       <div className="settings-card__actions">
                         {m.setup && !m.installed ? (
-                          <span className="settings-card__setup">
-                            {t("settings.models.setupHint")} <code>{m.setup}</code>
-                          </span>
+                          <button
+                            className="settings-btn settings-btn--primary"
+                            disabled={setupBusy === m.id}
+                            onClick={() => onSetup(m)}
+                            title={m.setup}
+                          >
+                            {setupBusy === m.id
+                              ? t("settings.models.setupRunning")
+                              : t("settings.models.setup")}
+                          </button>
                         ) : m.installed ? (
                           <>
                             <span className="settings-card__ok">{t("models.installed")}</span>
@@ -143,6 +159,14 @@ export function ModelsTab({
                     {/* Optional notes */}
                     {m.notes && (
                       <span className="settings-card__notes">{m.notes}</span>
+                    )}
+
+                    {/* Setup hint + live install log */}
+                    {m.setup && !m.installed && (
+                      <span className="settings-card__notes">{t("settings.models.setupNote")}</span>
+                    )}
+                    {(setupLog[m.id]?.length ?? 0) > 0 && (
+                      <pre className="settings-setup-log">{setupLog[m.id].join("\n")}</pre>
                     )}
 
                     {/* Download progress bar */}

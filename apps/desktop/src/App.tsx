@@ -190,6 +190,10 @@ export default function App() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [modelProgress, setModelProgress] = useState<Record<string, ModelProgress>>({});
   const [modelBusy, setModelBusy] = useState<string | null>(null);
+  // In-app setup-script run (TTS sidecar venv): the id currently installing, and
+  // the live output log keyed by model id.
+  const [setupBusy, setSetupBusy] = useState<string | null>(null);
+  const [setupLog, setSetupLog] = useState<Record<string, string[]>>({});
   // The open formatting preview (original vs formatted), with its apply action.
   const [preview, setPreview] = useState<{
     original: string;
@@ -937,6 +941,17 @@ export default function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
+  // Live setup-script output (in-app TTS sidecar install).
+  useEffect(() => {
+    const unlisten = listen<{ id: string; line: string }>("setup_progress", (e) => {
+      setSetupLog((p) => ({
+        ...p,
+        [e.payload.id]: [...(p[e.payload.id] ?? []), e.payload.line],
+      }));
+    });
+    return () => void unlisten.then((f) => f());
+  }, []);
+
   // Open the settings window on a given tab; load the catalog + provider
   // summaries so the Models and About tabs are populated.
   const openSettings = useCallback((tab: SettingsTab) => {
@@ -983,6 +998,20 @@ export default function App() {
       setCatalog(await api.listCatalog());
     } catch (err) {
       console.error("delete failed:", err);
+    }
+  }, []);
+
+  // Run a catalog entry's setup script in-app, streaming its log; refresh on done.
+  const handleRunSetup = useCallback(async (item: CatalogItem) => {
+    setSetupBusy(item.id);
+    setSetupLog((p) => ({ ...p, [item.id]: [] }));
+    try {
+      await api.runSetup(item.id);
+      setCatalog(await api.listCatalog());
+    } catch (err) {
+      setSetupLog((p) => ({ ...p, [item.id]: [...(p[item.id] ?? []), String(err)] }));
+    } finally {
+      setSetupBusy(null);
     }
   }, []);
 
@@ -1584,6 +1613,9 @@ export default function App() {
               modelBusy={modelBusy}
               onInstallModel={handleInstallModel}
               onDeleteModel={handleDeleteModel}
+              onRunSetup={handleRunSetup}
+              setupBusy={setupBusy}
+              setupLog={setupLog}
               backendLabel={backendLabel(activeProvider)}
               isPiper={activeProvider === "piper"}
               isZonos={activeProvider === "zonos"}

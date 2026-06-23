@@ -270,6 +270,10 @@ const de = {
   "settings.models.empty": "Keine Modelle im Katalog.",
   "settings.models.size": "Größe",
   "settings.models.setupHint": "Per Setup-Skript installieren:",
+  "settings.models.setup": "Einrichten",
+  "settings.models.setupRunning": "Richte ein …",
+  "settings.models.setupNote":
+    "Einmalige Einrichtung (Python-venv, GPU). Läuft direkt in der App; nach Abschluss App neu starten.",
   // Read-aloud tab
   "settings.readaloud.voiceTitle": "Stimme & Backend",
   "settings.readaloud.tuningTitle": "Klang & Tempo",
@@ -572,6 +576,10 @@ const en: Record<TranslationKey, string> = {
   "settings.models.empty": "No models in the catalog.",
   "settings.models.size": "Size",
   "settings.models.setupHint": "Install via setup script:",
+  "settings.models.setup": "Set up",
+  "settings.models.setupRunning": "Setting up …",
+  "settings.models.setupNote":
+    "One-time setup (Python venv, GPU). Runs right in the app; restart the app when done.",
   "settings.readaloud.voiceTitle": "Voice & backend",
   "settings.readaloud.tuningTitle": "Sound & speed",
   "settings.readaloud.prepTitle": "Speech preparation",

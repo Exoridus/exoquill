@@ -79,6 +79,45 @@ struct ModelProgress {
     total: u64,
 }
 
+/// One line of setup-script output, emitted on the `setup_progress` event so the
+/// model manager can show a live install log.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SetupProgress {
+    id: String,
+    line: String,
+}
+
+/// The repo/portable root that holds `scripts/<name>-server.py`, found by walking
+/// up from the current dir. This is where a setup script puts its `.venv-<name>`
+/// and `<name>-voices` folder.
+pub(crate) fn sidecar_root(name: &str) -> Option<PathBuf> {
+    let rel = format!("scripts/{name}-server.py");
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        if dir.join(&rel).exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// A sidecar installed by `run_setup` at the conventional layout, if its venv
+/// python exists: `(python, server script, voices dir)`. The voices dir may be
+/// empty until the user adds reference clips, but the venv proves it's installed.
+pub(crate) fn conventional_sidecar(name: &str) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let root = sidecar_root(name)?;
+    let python = root.join(format!(".venv-{name}/Scripts/python.exe"));
+    if !python.exists() {
+        return None;
+    }
+    let script = root.join(format!("scripts/{name}-server.py"));
+    let voices = root.join(format!("{name}-voices"));
+    Some((python, script, voices))
+}
+
 fn catalog() -> Catalog {
     serde_json::from_str(CATALOG_JSON).expect("embedded models.json is valid")
 }
@@ -99,19 +138,20 @@ fn models_root(app: &AppHandle) -> PathBuf {
 /// files under the models root; the XTTS runtime is detected by its env path.
 fn entry_status(app: &AppHandle, entry: &ModelEntry) -> (bool, u64) {
     if entry.files.is_empty() {
-        if entry.provider == "xtts" {
-            let ok = std::env::var("EXOQUILL_XTTS_PYTHON")
-                .map(|p| PathBuf::from(p).exists())
-                .unwrap_or(false);
-            return (ok, 0);
-        }
-        if entry.provider == "chatterbox" {
-            let ok = std::env::var("EXOQUILL_CHATTERBOX_PYTHON")
-                .map(|p| PathBuf::from(p).exists())
-                .unwrap_or(false);
-            return (ok, 0);
-        }
-        return (false, 0);
+        // Sidecar runtimes (no downloadable files): installed if the dev env var
+        // points at a python, or a `run_setup` venv exists at the conventional path.
+        let env_key = match entry.provider.as_str() {
+            "xtts" => Some("EXOQUILL_XTTS_PYTHON"),
+            "chatterbox" => Some("EXOQUILL_CHATTERBOX_PYTHON"),
+            "zonos" => Some("EXOQUILL_ZONOS_PYTHON"),
+            _ => None,
+        };
+        let via_env = env_key
+            .and_then(|k| std::env::var(k).ok())
+            .map(|p| PathBuf::from(p).exists())
+            .unwrap_or(false);
+        let via_setup = conventional_sidecar(&entry.provider).is_some();
+        return (via_env || via_setup, 0);
     }
     let root = models_root(app);
     let mut bytes = 0u64;
@@ -233,4 +273,98 @@ pub fn delete_model(app: AppHandle, id: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Resolve a repo-relative path (e.g. `scripts/setup-zonos.ps1`) to an absolute
+/// one: an explicit `EXOQUILL_SCRIPTS_ROOT` override, the bundled resource dir,
+/// or by walking up from the current dir (dev).
+fn resolve_repo_path(app: &AppHandle, rel: &str) -> Option<PathBuf> {
+    if let Ok(root) = std::env::var("EXOQUILL_SCRIPTS_ROOT") {
+        let p = PathBuf::from(root).join(rel);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join(rel);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        let p = dir.join(rel);
+        if p.exists() {
+            return Some(p);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Run a catalog entry's setup script (the Python-venv install for a TTS sidecar)
+/// from inside the app, streaming its output line-by-line on `setup_progress`.
+/// The in-app alternative to running the `.ps1` by hand. Returns Ok on a zero exit
+/// code; the sidecar is then discoverable on next app start (`conventional_sidecar`).
+#[tauri::command(async)]
+pub fn run_setup(app: AppHandle, id: String) -> Result<(), String> {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+
+    let entry = catalog()
+        .models
+        .into_iter()
+        .find(|e| e.id == id)
+        .ok_or_else(|| format!("unbekanntes Modell: {id}"))?;
+    let setup = entry
+        .setup
+        .ok_or_else(|| "Dieses Modell hat kein Setup-Skript.".to_string())?;
+    let script = resolve_repo_path(&app, &setup)
+        .ok_or_else(|| format!("Setup-Skript nicht gefunden: {setup}"))?;
+
+    let emit = |line: String| {
+        let _ = app.emit(
+            "setup_progress",
+            SetupProgress {
+                id: id.clone(),
+                line,
+            },
+        );
+    };
+    emit(format!("▸ {}", script.display()));
+
+    // Run via PowerShell, merging all streams (`*>&1`) so the install log is complete.
+    let mut child = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &format!("& '{}' *>&1", script.display()),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
+
+    if let Some(out) = child.stdout.take() {
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            emit(line);
+        }
+    }
+    let status = child.wait().map_err(|e| format!("Setup-Prozess: {e}"))?;
+    if let Some(mut err) = child.stderr.take() {
+        let mut s = String::new();
+        let _ = err.read_to_string(&mut s);
+        for line in s.lines() {
+            emit(line.to_string());
+        }
+    }
+    if status.success() {
+        emit("✓ Einrichtung abgeschlossen — Backend nach Neustart aktiv.".to_string());
+        Ok(())
+    } else {
+        Err(format!("Setup fehlgeschlagen (Code {:?}).", status.code()))
+    }
 }
