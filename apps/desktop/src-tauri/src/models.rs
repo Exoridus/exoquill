@@ -122,6 +122,33 @@ fn catalog() -> Catalog {
     serde_json::from_str(CATALOG_JSON).expect("embedded models.json is valid")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Guards the embedded `models.json` against typos (e.g. a straight `"` inside a
+    /// German note closing the string early) — those would otherwise only surface as
+    /// a runtime panic when the model manager opens.
+    #[test]
+    fn embedded_catalog_parses() {
+        let cat = catalog();
+        assert!(!cat.models.is_empty(), "catalog is empty");
+        // Every entry must have a non-empty id and a known tier.
+        for m in &cat.models {
+            assert!(!m.id.is_empty(), "entry with empty id");
+            assert!(
+                matches!(m.tier.as_str(), "bundled" | "download" | "gated"),
+                "unknown tier {:?} for {}",
+                m.tier,
+                m.id
+            );
+        }
+        // The native Kokoro voices (English + German) must be present.
+        assert!(cat.models.iter().any(|m| m.id == "tts-kokoro"));
+        assert!(cat.models.iter().any(|m| m.id == "tts-kokoro-de"));
+    }
+}
+
 /// The writable root downloaded models land in. `EXOQUILL_MODELS_ROOT` (dev →
 /// `runtimes/`, where the providers look) or the app-data dir in release.
 fn models_root(app: &AppHandle) -> PathBuf {

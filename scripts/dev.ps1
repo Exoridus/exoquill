@@ -32,6 +32,15 @@ $env:EXOQUILL_WHISPER_MODEL = Join-Path $runtimes "models\ggml-large-v3-turbo-q5
 # to set otherwise. Fetch the assets with scripts/fetch-silero.ps1.
 $env:EXOQUILL_SILERO_MODEL = Join-Path $runtimes "models\silero_vad.onnx"
 $env:ORT_DYLIB_PATH = Join-Path $runtimes "onnxruntime\onnxruntime.dll"
+# Native Kokoro TTS (built by default now). German (Martin) is the OOTB voice;
+# English is optional. Missing assets are simply skipped at runtime. Fetch with
+# scripts/fetch-kokoro.ps1 (also pulls the CPU onnxruntime + portable espeak-ng).
+$env:EXOQUILL_KOKORO_DE_MODEL = Join-Path $runtimes "models\kokoro-de\kokoro-martin.onnx"
+$env:EXOQUILL_KOKORO_DE_VOICES = Join-Path $runtimes "models\kokoro-de\voices-martin.npz"
+$env:EXOQUILL_KOKORO_MODEL = Join-Path $runtimes "models\kokoro\model.onnx"
+$env:EXOQUILL_KOKORO_VOICES = Join-Path $runtimes "models\kokoro\voices"
+$env:EXOQUILL_ESPEAK = Join-Path $runtimes "espeak-ng\espeak-ng.exe"
+$env:EXOQUILL_ESPEAK_DATA = Join-Path $runtimes "espeak-ng"
 
 Set-Location $root
 pnpm dev

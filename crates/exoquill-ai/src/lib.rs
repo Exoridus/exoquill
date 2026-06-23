@@ -28,7 +28,7 @@ pub mod zonos;
 
 pub use chatterbox::{ChatterboxServer, ChatterboxTts};
 #[cfg(feature = "kokoro")]
-pub use kokoro::KokoroTts;
+pub use kokoro::{KokoroEngineConfig, KokoroLanguage, KokoroTts};
 pub use llama::LlamaFormatter;
 pub use llama_server::{LlamaServer, LlamaServerFormatter};
 pub use piper::PiperTts;

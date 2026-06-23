@@ -288,36 +288,84 @@ fn resolve_chatterbox_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
     .or_else(|| crate::models::conventional_sidecar("chatterbox"))
 }
 
-/// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar). The model
-/// and voices come from `EXOQUILL_KOKORO_MODEL` / `EXOQUILL_KOKORO_VOICES` (dev),
-/// else the bundled `models/kokoro/model.onnx` and `models/kokoro/voices` resource
-/// dir. Returns `None` (→ another TTS provider) when the assets, ONNX Runtime, or
-/// espeak-ng binary are absent. Fetch model/voices via the manager (`tts-kokoro`).
+/// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar) with all
+/// language engines whose assets are present:
+///
+/// - **English** — `EXOQUILL_KOKORO_MODEL` / `EXOQUILL_KOKORO_VOICES` (dev) or the
+///   bundled `models/kokoro/model.onnx` + `models/kokoro/voices`.
+/// - **German (Martin)** — `EXOQUILL_KOKORO_DE_MODEL` / `EXOQUILL_KOKORO_DE_VOICES`
+///   or the bundled `models/kokoro-de/kokoro-martin.onnx` + `voices-martin.npz`.
+///
+/// German is registered first, so a German build that bundles both makes Martin the
+/// Kokoro default voice. Returns `None` (→ another TTS provider) when no engine's
+/// assets, the ONNX Runtime, or the espeak-ng binary are available.
 ///
 /// Like the Silero gate, ONNX Runtime is linked dynamically (`ort` `load-dynamic`):
 /// we point `ORT_DYLIB_PATH` at the bundled `onnxruntime.dll` when the caller
-/// hasn't set it. Apache-2.0 weights, English, runs on CPU (or GPU via DirectML).
+/// hasn't set it. Apache-2.0 weights; runs CPU-only (faster than real time).
 #[cfg(feature = "kokoro")]
 fn resolve_kokoro_native(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+    use exoquill_ai::{KokoroEngineConfig, KokoroLanguage};
+
     let resources = app.path().resource_dir().ok();
-    let model = std::env::var("EXOQUILL_KOKORO_MODEL")
+    // Where the model manager downloads on-demand assets (writable): the dev
+    // `EXOQUILL_MODELS_ROOT` (= runtimes/) or the app-data `models/` dir.
+    let models_root: Option<PathBuf> = std::env::var("EXOQUILL_MODELS_ROOT")
         .map(PathBuf::from)
         .ok()
-        .or_else(|| {
-            resources
-                .as_ref()
-                .map(|d| d.join("models/kokoro/model.onnx"))
-        })?;
-    if !model.exists() {
+        .or_else(|| app.path().app_data_dir().ok().map(|d| d.join("models")));
+
+    // Resolve an asset by `rel` path: an explicit env override, then the writable
+    // download root (`<models_root>/<rel>`), then the bundled resource dir
+    // (`<resources>/models/<rel>`). First existing wins.
+    let resolve = |env_key: &str, rel: &str| -> Option<PathBuf> {
+        if let Ok(p) = std::env::var(env_key) {
+            let p = PathBuf::from(p);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        if let Some(root) = models_root.as_ref() {
+            let p = root.join(rel);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        if let Some(res) = resources.as_ref() {
+            let p = res.join("models").join(rel);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        None
+    };
+
+    let mut configs = Vec::new();
+    // German (Martin) first → Kokoro default voice when both are present.
+    if let (Some(model_path), Some(voices_path)) = (
+        resolve("EXOQUILL_KOKORO_DE_MODEL", "kokoro-de/kokoro-martin.onnx"),
+        resolve("EXOQUILL_KOKORO_DE_VOICES", "kokoro-de/voices-martin.npz"),
+    ) {
+        configs.push(KokoroEngineConfig {
+            model_path,
+            voices_path,
+            language: KokoroLanguage::German,
+        });
+    }
+    if let (Some(model_path), Some(voices_path)) = (
+        resolve("EXOQUILL_KOKORO_MODEL", "kokoro/model.onnx"),
+        resolve("EXOQUILL_KOKORO_VOICES", "kokoro/voices"),
+    ) {
+        configs.push(KokoroEngineConfig {
+            model_path,
+            voices_path,
+            language: KokoroLanguage::English,
+        });
+    }
+    if configs.is_empty() {
         return None;
     }
-    let voices = std::env::var("EXOQUILL_KOKORO_VOICES")
-        .map(PathBuf::from)
-        .ok()
-        .or_else(|| resources.as_ref().map(|d| d.join("models/kokoro/voices")))?;
-    if !voices.exists() {
-        return None;
-    }
+
     // ort (load-dynamic) finds onnxruntime via ORT_DYLIB_PATH; set it from our
     // bundled runtime if the caller hasn't already pointed it somewhere (mirrors
     // the Silero resolver).
@@ -334,7 +382,26 @@ fn resolve_kokoro_native(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
             std::env::set_var("ORT_DYLIB_PATH", dll);
         }
     }
-    match exoquill_ai::KokoroTts::new(&model, &voices) {
+
+    // Point Kokoro at a bundled/portable espeak-ng (binary + data dir) when the
+    // caller hasn't already, so the G2P works OOTB without a system install. The
+    // data dir is the folder that *contains* `espeak-ng-data` (passed as --path).
+    if let Some(res) = resources.as_ref() {
+        let espeak_dir = res.join("runtimes/espeak-ng");
+        if std::env::var_os("EXOQUILL_ESPEAK").is_none() {
+            let exe = espeak_dir.join("espeak-ng.exe");
+            if exe.exists() {
+                std::env::set_var("EXOQUILL_ESPEAK", exe);
+            }
+        }
+        if std::env::var_os("EXOQUILL_ESPEAK_DATA").is_none()
+            && espeak_dir.join("espeak-ng-data").exists()
+        {
+            std::env::set_var("EXOQUILL_ESPEAK_DATA", &espeak_dir);
+        }
+    }
+
+    match exoquill_ai::KokoroTts::load(configs) {
         Ok(kokoro) => Some(Arc::new(kokoro) as Arc<dyn TextToSpeechProvider>),
         Err(error) => {
             eprintln!("kokoro native TTS unavailable: {error}");

@@ -89,12 +89,12 @@
       "id": "tts-kokoro",
       "provider": "kokoro",
       "kind": "voice",
-      "displayName": "Kokoro-82M (nativ)",
+      "displayName": "Kokoro-82M — Englisch (nativ)",
       "language": "en",
       "license": "Apache-2.0",
       "commercialOk": true,
       "tier": "download",
-      "notes": "Apache-2.0, sehr klein (82M) und schnell, läuft nativ über ONNX Runtime (CPU oder GPU via DirectML) — kein Python-Sidecar. Benötigt die espeak-ng-Binary (G2P). Primär Englisch. ~326 MB Modell (model.onnx, Vollpräzision) plus fünf Stimmen.",
+      "notes": "Apache-2.0, sehr klein (82M) und schnell, läuft nativ über ONNX Runtime auf der CPU (schneller als Echtzeit) — kein Python-Sidecar. Benötigt die espeak-ng-Binary (G2P). Englische Stimmen. ~326 MB Modell (model.onnx, Vollpräzision) plus fünf Stimmen. Für Deutsch siehe „Kokoro Martin“.",
       "files": [
         { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx", "relPath": "kokoro/model.onnx" },
         { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json", "relPath": "kokoro/tokenizer.json" },
@@ -103,6 +103,21 @@
         { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin", "relPath": "kokoro/voices/am_michael.bin" },
         { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bf_emma.bin", "relPath": "kokoro/voices/bf_emma.bin" },
         { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_george.bin", "relPath": "kokoro/voices/bm_george.bin" }
+      ]
+    },
+    {
+      "id": "tts-kokoro-de",
+      "provider": "kokoro",
+      "kind": "voice",
+      "displayName": "Kokoro Martin — Deutsch (nativ)",
+      "language": "de_DE",
+      "license": "Apache-2.0",
+      "commercialOk": true,
+      "tier": "download",
+      "notes": "Apache-2.0, deutsche Single-Speaker-Stimme „Martin“ (StyleTTS2-Finetune, Godelaune/kikiri-german). Läuft nativ über ONNX Runtime auf der CPU (schneller als Echtzeit) — kein Python-Sidecar. Benötigt die espeak-ng-Binary (G2P, deutsch). ~326 MB Modell + ~0,5 MB Stimme (voices-martin.npz). Bündelbar (Apache-2.0); die native OOTB-Stimme für Deutsch.",
+      "files": [
+        { "url": "https://huggingface.co/Godelaune/Kokoro-82M-ONNX-German-Martin/resolve/main/kokoro-martin.onnx", "relPath": "kokoro-de/kokoro-martin.onnx" },
+        { "url": "https://huggingface.co/Godelaune/Kokoro-82M-ONNX-German-Martin/resolve/main/voices-martin.npz", "relPath": "kokoro-de/voices-martin.npz" }
       ]
     }
   ]

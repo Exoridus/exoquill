@@ -37,11 +37,19 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 
 [features]
+# Kokoro is ON by default so the shipped app has a native neural TTS out of the box
+# (CPU, faster than real time for the 82M model). It links ONNX Runtime via
+# `load-dynamic` (dlopen at runtime, no native lib at build), and degrades
+# gracefully to the other TTS providers when the model/onnxruntime.dll/espeak-ng
+# aren't present — so a default build always compiles and runs. Build lean with
+# `--no-default-features`.
+default = ["kokoro"]
 # Neural VAD for dictation (Silero ONNX). Off by default: needs onnxruntime + the
 # model fetched separately (scripts/fetch-silero.ps1). Forwards to exoquill-audio.
 silero = ["exoquill-audio/silero"]
-# Native Kokoro-82M TTS (ONNX Runtime). Off by default: needs onnxruntime
-# (load-dynamic), the espeak-ng binary, and the Kokoro model + voices fetched
-# separately (model manager `tts-kokoro`). Forwards to exoquill-ai. Shares the
-# same exact `ort` version as `silero`, so both can be enabled together.
+# Native Kokoro-82M TTS (ONNX Runtime, no Python). Needs onnxruntime (load-dynamic),
+# the espeak-ng binary + data, and a Kokoro model + voices — bundled for release
+# (tauri.kokoro.conf.json) or fetched via the model manager (`tts-kokoro`,
+# `tts-kokoro-de`). Forwards to exoquill-ai. Shares the exact `ort` version with
+# `silero`, so both can be enabled together.
 kokoro = ["exoquill-ai/kokoro"]

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../../../runtimes/models/kokoro-de/kokoro-martin.onnx": "models/kokoro-de/kokoro-martin.onnx",
+      "../../../runtimes/models/kokoro-de/voices-martin.npz": "models/kokoro-de/voices-martin.npz",
+      "../../../runtimes/onnxruntime/onnxruntime.dll": "runtimes/onnxruntime/onnxruntime.dll",
+      "../../../runtimes/espeak-ng/": "runtimes/espeak-ng/"
+    }
+  }
+}
