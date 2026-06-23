@@ -86,6 +86,19 @@
       "files": []
     },
     {
+      "id": "tts-qwen3",
+      "provider": "qwen3",
+      "kind": "runtime",
+      "displayName": "Qwen3-TTS — multilingual (experimentell)",
+      "language": "multi",
+      "license": "Apache-2.0",
+      "commercialOk": true,
+      "tier": "download",
+      "setup": "scripts/setup-qwen3tts.ps1",
+      "notes": "Apache-2.0 (kommerziell ok), 10 Sprachen inkl. Deutsch, ~4,5 GB (1.7B). Benötigt eine CUDA-GPU. Neun eingebaute Sprecher plus Voice-Cloning aus Referenz-WAVs (qwen3-voices/, je <name>.wav + <name>.txt-Transkript).",
+      "files": []
+    },
+    {
       "id": "tts-kokoro",
       "provider": "kokoro",
       "kind": "voice",

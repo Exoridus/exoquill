@@ -146,6 +146,16 @@ mod tests {
         // The native Kokoro voices (English + German) must be present.
         assert!(cat.models.iter().any(|m| m.id == "tts-kokoro"));
         assert!(cat.models.iter().any(|m| m.id == "tts-kokoro-de"));
+        // Qwen3-TTS sidecar runtime entry (download tier, setup script, no files).
+        let qwen3 = cat
+            .models
+            .iter()
+            .find(|m| m.id == "tts-qwen3")
+            .expect("tts-qwen3 entry present");
+        assert_eq!(qwen3.provider, "qwen3");
+        assert_eq!(qwen3.tier, "download");
+        assert!(qwen3.files.is_empty());
+        assert_eq!(qwen3.setup.as_deref(), Some("scripts/setup-qwen3tts.ps1"));
     }
 }
 
