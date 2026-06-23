@@ -288,6 +288,19 @@ pub(crate) fn resolve_chatterbox_paths(app: &AppHandle) -> Option<(PathBuf, Path
     .or_else(|| crate::models::conventional_sidecar("chatterbox", app))
 }
 
+/// Python + `qwen3tts-server.py` + a reference-voice folder, from
+/// `EXOQUILL_QWEN3_PYTHON` / `EXOQUILL_QWEN3_SCRIPT` / `EXOQUILL_QWEN3_VOICES`
+/// (set by dev.ps1), else a sidecar installed in-app via `run_setup`. Apache-2.0
+/// weights; needs a CUDA GPU, so it's opt-in.
+pub(crate) fn resolve_qwen3_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    env_sidecar(
+        "EXOQUILL_QWEN3_PYTHON",
+        "EXOQUILL_QWEN3_SCRIPT",
+        "EXOQUILL_QWEN3_VOICES",
+    )
+    .or_else(|| crate::models::conventional_sidecar("qwen3", app))
+}
+
 /// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar) with all
 /// language engines whose assets are present:
 ///
@@ -498,6 +511,7 @@ pub fn run() {
             let xtts_paths = resolve_xtts_paths(&handle);
             let zonos_paths = resolve_zonos_paths(&handle);
             let chatterbox_paths = resolve_chatterbox_paths(&handle);
+            let qwen3_paths = resolve_qwen3_paths(&handle);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
@@ -518,6 +532,9 @@ pub fn run() {
                 chatterbox_paths: Mutex::new(chatterbox_paths),
                 chatterbox_server: Mutex::new(None),
                 chatterbox_warming: std::sync::atomic::AtomicBool::new(false),
+                qwen3_paths: Mutex::new(qwen3_paths),
+                qwen3_server: Mutex::new(None),
+                qwen3_warming: std::sync::atomic::AtomicBool::new(false),
                 #[cfg(feature = "kokoro")]
                 kokoro: Mutex::new(resolve_kokoro_native(&handle)),
                 read_cancel: Mutex::new(exoquill_core::CancelToken::new()),
@@ -606,6 +623,9 @@ pub fn run() {
                         let _ = server.take();
                     }
                     if let Ok(mut server) = state.chatterbox_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.qwen3_server.lock() {
                         let _ = server.take();
                     }
                     // Kokoro is native (no child process) — nothing to kill here.

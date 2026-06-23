@@ -26,6 +26,12 @@ $env:EXOQUILL_XTTS_SCRIPT = Join-Path $root "scripts\xtts-server.py"
 $env:EXOQUILL_ZONOS_PYTHON = Join-Path $root ".venv-zonos\Scripts\python.exe"
 $env:EXOQUILL_ZONOS_SCRIPT = Join-Path $root "scripts\zonos-server.py"
 $env:EXOQUILL_ZONOS_VOICES = Join-Path $root "zonos-voices"
+# Auto-start the experimental Qwen3-TTS sidecar (Apache-2.0 weights, CUDA GPU).
+# Built-in speakers plus voice cloning. Reuses the existing zonos-voices/ folder
+# so dima.wav can be a clone — add dima.txt (its transcript) for cloning to work.
+$env:EXOQUILL_QWEN3_PYTHON = Join-Path $root ".venv-qwen3\Scripts\python.exe"
+$env:EXOQUILL_QWEN3_SCRIPT = Join-Path $root "scripts\qwen3tts-server.py"
+$env:EXOQUILL_QWEN3_VOICES = Join-Path $root "zonos-voices"
 $env:EXOQUILL_WHISPER = Join-Path $runtimes "whisper\whisper-cli.exe"
 $env:EXOQUILL_WHISPER_MODEL = Join-Path $runtimes "models\ggml-large-v3-turbo-q5_0.bin"
 # Optional Silero neural VAD (only used in a `--features silero` build); harmless

@@ -49,6 +49,12 @@ fn reactivate_provider(app: &AppHandle, provider: &str) {
                 *slot = resolved;
             }
         }
+        "qwen3" => {
+            let resolved = crate::resolve_qwen3_paths(app);
+            if let Ok(mut slot) = state.qwen3_paths.lock() {
+                *slot = resolved;
+            }
+        }
         "piper" => {
             let resolved = crate::resolve_tts_provider(app);
             if let Ok(mut slot) = state.tts.lock() {
@@ -245,6 +251,7 @@ fn entry_status(app: &AppHandle, entry: &ModelEntry) -> (bool, u64) {
             "xtts" => Some("EXOQUILL_XTTS_PYTHON"),
             "chatterbox" => Some("EXOQUILL_CHATTERBOX_PYTHON"),
             "zonos" => Some("EXOQUILL_ZONOS_PYTHON"),
+            "qwen3" => Some("EXOQUILL_QWEN3_PYTHON"),
             _ => None,
         };
         let via_env = env_key

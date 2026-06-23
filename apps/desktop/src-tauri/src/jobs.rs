@@ -107,6 +107,12 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
             .ok()
             .and_then(|slot| slot.as_ref().and_then(|server| server.client()))
             .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
+        Some("qwen3") => state
+            .qwen3_server
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().and_then(|server| server.client()))
+            .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
         // Kokoro is a native provider (no sidecar): route straight to it.
         #[cfg(feature = "kokoro")]
         Some("kokoro") => slot_provider(&state.kokoro),
@@ -502,6 +508,34 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
                 }
             });
         }
+        "qwen3" => {
+            let Some((python, script, voices)) =
+                state.qwen3_paths.lock().ok().and_then(|g| g.clone())
+            else {
+                return;
+            };
+            if state
+                .qwen3_server
+                .lock()
+                .map(|s| s.is_some())
+                .unwrap_or(false)
+            {
+                return;
+            }
+            if state.qwen3_warming.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let server = exoquill_ai::Qwen3Server::start(python, script, voices).ok();
+                if let Some(state) = handle.try_state::<AppState>() {
+                    if let (Some(server), Ok(mut slot)) = (server, state.qwen3_server.lock()) {
+                        *slot = Some(server);
+                    }
+                    state.qwen3_warming.store(false, Ordering::SeqCst);
+                }
+            });
+        }
         // Kokoro is native (no sidecar) — nothing to warm up; it's ready as soon
         // as the provider is built at setup. Handled in the `_` arm.
         _ => {}
@@ -541,6 +575,7 @@ pub fn ensure_tts_ready(
             .lock()
             .map(|s| s.is_some())
             .unwrap_or(false),
+        "qwen3" => st.qwen3_server.lock().map(|s| s.is_some()).unwrap_or(false),
         // Piper / Kokoro (native, no warm-up) / unknown → ready at once.
         _ => true,
     };
@@ -548,6 +583,7 @@ pub fn ensure_tts_ready(
         "xtts" => st.xtts_warming.load(Ordering::SeqCst),
         "zonos" => st.zonos_warming.load(Ordering::SeqCst),
         "chatterbox" => st.chatterbox_warming.load(Ordering::SeqCst),
+        "qwen3" => st.qwen3_warming.load(Ordering::SeqCst),
         _ => false,
     };
     let configured = match provider.as_str() {
@@ -558,6 +594,7 @@ pub fn ensure_tts_ready(
             .lock()
             .map(|g| g.is_some())
             .unwrap_or(false),
+        "qwen3" => st.qwen3_paths.lock().map(|g| g.is_some()).unwrap_or(false),
         _ => true,
     };
 
@@ -793,6 +830,10 @@ pub fn list_tts_voices(state: State<AppState>) -> Vec<TtsVoice> {
     }
     if let Some((_, _, voices_dir)) = state.chatterbox_paths.lock().ok().and_then(|g| g.clone()) {
         voices.extend(exoquill_ai::ChatterboxTts::voices_in_dir(&voices_dir));
+    }
+    if let Some((_, _, voices_dir)) = state.qwen3_paths.lock().ok().and_then(|g| g.clone()) {
+        voices.extend(exoquill_ai::Qwen3Tts::predefined_voices());
+        voices.extend(exoquill_ai::Qwen3Tts::voices_in_dir(&voices_dir));
     }
     // Native Kokoro: list its loaded voices directly (no sidecar to query).
     #[cfg(feature = "kokoro")]

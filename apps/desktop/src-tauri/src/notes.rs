@@ -74,6 +74,15 @@ pub struct AppState {
     pub chatterbox_server: Mutex<Option<exoquill_ai::ChatterboxServer>>,
     /// Guards against starting two Chatterbox sidecars concurrently (see above).
     pub chatterbox_warming: std::sync::atomic::AtomicBool,
+    /// `(python, qwen3tts-server.py, voices_dir)` to spawn the Qwen3-TTS sidecar,
+    /// or `None` when not configured. Apache-2.0 weights, needs a CUDA GPU. Built-in
+    /// speakers plus cloning from `<name>.wav` + `<name>.txt` in `voices_dir`.
+    pub qwen3_paths: Mutex<Option<(PathBuf, PathBuf, PathBuf)>>,
+    /// The Qwen3 sidecar, warmed up on demand (when the UI selects Qwen3) and kept
+    /// alive. Dropping it kills the Python process.
+    pub qwen3_server: Mutex<Option<exoquill_ai::Qwen3Server>>,
+    /// Guards against starting two Qwen3 sidecars concurrently.
+    pub qwen3_warming: std::sync::atomic::AtomicBool,
     /// The native Kokoro-82M TTS provider (ONNX Runtime, no sidecar), built once
     /// at setup when the model + voices + espeak-ng are present, else `None`.
     /// Apache-2.0 weights, English, fixed built-in voice set. Only present when
