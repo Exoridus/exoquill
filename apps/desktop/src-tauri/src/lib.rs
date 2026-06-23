@@ -286,17 +286,59 @@ fn resolve_chatterbox_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
     (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
 }
 
-/// Python + `kokoro-server.py`, from `EXOQUILL_KOKORO_PYTHON` / `EXOQUILL_KOKORO_SCRIPT`
-/// (set by dev.ps1). `None` when not configured. Kokoro-82M is Apache-2.0 and
-/// runs on CPU, so it's opt-in via env vars but doesn't need a GPU.
-fn resolve_kokoro_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
-    let python = std::env::var("EXOQUILL_KOKORO_PYTHON")
+/// Build the native Kokoro-82M TTS provider (ONNX Runtime, no sidecar). The model
+/// and voices come from `EXOQUILL_KOKORO_MODEL` / `EXOQUILL_KOKORO_VOICES` (dev),
+/// else the bundled `models/kokoro/model.onnx` and `models/kokoro/voices` resource
+/// dir. Returns `None` (→ another TTS provider) when the assets, ONNX Runtime, or
+/// espeak-ng binary are absent. Fetch model/voices via the manager (`tts-kokoro`).
+///
+/// Like the Silero gate, ONNX Runtime is linked dynamically (`ort` `load-dynamic`):
+/// we point `ORT_DYLIB_PATH` at the bundled `onnxruntime.dll` when the caller
+/// hasn't set it. Apache-2.0 weights, English, runs on CPU (or GPU via DirectML).
+#[cfg(feature = "kokoro")]
+fn resolve_kokoro_native(app: &App) -> Option<Arc<dyn TextToSpeechProvider>> {
+    let resources = app.path().resource_dir().ok();
+    let model = std::env::var("EXOQUILL_KOKORO_MODEL")
         .map(PathBuf::from)
-        .ok()?;
-    let script = std::env::var("EXOQUILL_KOKORO_SCRIPT")
+        .ok()
+        .or_else(|| {
+            resources
+                .as_ref()
+                .map(|d| d.join("models/kokoro/model.onnx"))
+        })?;
+    if !model.exists() {
+        return None;
+    }
+    let voices = std::env::var("EXOQUILL_KOKORO_VOICES")
         .map(PathBuf::from)
-        .ok()?;
-    (python.exists() && script.exists()).then_some((python, script))
+        .ok()
+        .or_else(|| resources.as_ref().map(|d| d.join("models/kokoro/voices")))?;
+    if !voices.exists() {
+        return None;
+    }
+    // ort (load-dynamic) finds onnxruntime via ORT_DYLIB_PATH; set it from our
+    // bundled runtime if the caller hasn't already pointed it somewhere (mirrors
+    // the Silero resolver).
+    if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+        let dll = std::env::var("EXOQUILL_ORT_DYLIB")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(|| {
+                resources
+                    .as_ref()
+                    .map(|d| d.join("runtimes/onnxruntime/onnxruntime.dll"))
+            });
+        if let Some(dll) = dll.filter(|p| p.exists()) {
+            std::env::set_var("ORT_DYLIB_PATH", dll);
+        }
+    }
+    match exoquill_ai::KokoroTts::new(&model, &voices) {
+        Ok(kokoro) => Some(Arc::new(kokoro) as Arc<dyn TextToSpeechProvider>),
+        Err(error) => {
+            eprintln!("kokoro native TTS unavailable: {error}");
+            None
+        }
+    }
 }
 
 /// Open the region-OCR selection overlay: freeze the monitor under the cursor,
@@ -386,7 +428,6 @@ pub fn run() {
             let xtts_paths = resolve_xtts_paths(app);
             let zonos_paths = resolve_zonos_paths(app);
             let chatterbox_paths = resolve_chatterbox_paths(app);
-            let kokoro_paths = resolve_kokoro_paths(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
@@ -407,9 +448,8 @@ pub fn run() {
                 chatterbox_paths,
                 chatterbox_server: Mutex::new(None),
                 chatterbox_warming: std::sync::atomic::AtomicBool::new(false),
-                kokoro_paths,
-                kokoro_server: Mutex::new(None),
-                kokoro_warming: std::sync::atomic::AtomicBool::new(false),
+                #[cfg(feature = "kokoro")]
+                kokoro: resolve_kokoro_native(app),
                 read_cancel: Mutex::new(exoquill_core::CancelToken::new()),
                 dictation: Mutex::new(None),
                 region_capture: Mutex::new(None),
@@ -497,9 +537,7 @@ pub fn run() {
                     if let Ok(mut server) = state.chatterbox_server.lock() {
                         let _ = server.take();
                     }
-                    if let Ok(mut server) = state.kokoro_server.lock() {
-                        let _ = server.take();
-                    }
+                    // Kokoro is native (no child process) — nothing to kill here.
                 }
             }
         });

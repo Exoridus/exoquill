@@ -88,15 +88,22 @@
     {
       "id": "tts-kokoro",
       "provider": "kokoro",
-      "kind": "runtime",
-      "displayName": "Kokoro-82M",
-      "language": "multi",
+      "kind": "voice",
+      "displayName": "Kokoro-82M (nativ)",
+      "language": "en",
       "license": "Apache-2.0",
       "commercialOk": true,
       "tier": "download",
-      "setup": "scripts/setup-kokoro.ps1",
-      "notes": "Apache-2.0, sehr klein (82M) und schnell, läuft auch auf der CPU. Offizielles Deutsch fehlt (nur Community-Stimme) — primär Englisch.",
-      "files": []
+      "notes": "Apache-2.0, sehr klein (82M) und schnell, läuft nativ über ONNX Runtime (CPU oder GPU via DirectML) — kein Python-Sidecar. Benötigt die espeak-ng-Binary (G2P). Primär Englisch. ~326 MB Modell (model.onnx, Vollpräzision) plus fünf Stimmen.",
+      "files": [
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx", "relPath": "kokoro/model.onnx" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json", "relPath": "kokoro/tokenizer.json" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin", "relPath": "kokoro/voices/af_heart.bin" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin", "relPath": "kokoro/voices/af_bella.bin" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin", "relPath": "kokoro/voices/am_michael.bin" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bf_emma.bin", "relPath": "kokoro/voices/bf_emma.bin" },
+        { "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_george.bin", "relPath": "kokoro/voices/bm_george.bin" }
+      ]
     }
   ]
 }

@@ -7,6 +7,9 @@
 
 pub mod chatterbox;
 pub mod formatter;
+/// Native Kokoro-82M TTS (ONNX Runtime). Behind the `kokoro` feature: it pulls
+/// in `ort` (load-dynamic), like the audio crate's `silero` gate.
+#[cfg(feature = "kokoro")]
 pub mod kokoro;
 pub mod llama;
 pub mod llama_server;
@@ -24,7 +27,8 @@ pub mod xtts;
 pub mod zonos;
 
 pub use chatterbox::{ChatterboxServer, ChatterboxTts};
-pub use kokoro::{KokoroServer, KokoroTts};
+#[cfg(feature = "kokoro")]
+pub use kokoro::KokoroTts;
 pub use llama::LlamaFormatter;
 pub use llama_server::{LlamaServer, LlamaServerFormatter};
 pub use piper::PiperTts;

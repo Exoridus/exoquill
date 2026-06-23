@@ -111,12 +111,6 @@ fn entry_status(app: &AppHandle, entry: &ModelEntry) -> (bool, u64) {
                 .unwrap_or(false);
             return (ok, 0);
         }
-        if entry.provider == "kokoro" {
-            let ok = std::env::var("EXOQUILL_KOKORO_PYTHON")
-                .map(|p| PathBuf::from(p).exists())
-                .unwrap_or(false);
-            return (ok, 0);
-        }
         return (false, 0);
     }
     let root = models_root(app);

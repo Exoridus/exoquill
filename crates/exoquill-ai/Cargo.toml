@@ -20,3 +20,23 @@ reqwest = { version = "0.13", default-features = false, features = [
     "multipart",
     "json",
 ] }
+
+# Native Kokoro-82M TTS — ONNX Runtime, optional, pulled in only by the `kokoro`
+# feature so the default build never compiles ORT. `load-dynamic` links onnxruntime
+# at runtime (dlopen), mirroring exoquill-audio's silero gate; the same exact ort
+# version (=2.0.0-rc.10) must be used across the workspace so a single ort/ort-sys
+# resolves. We DON'T use a third-party Kokoro crate: kokoro-en/kokoro-micro require
+# ort rc.11/rc.12 (which break the workspace's load-dynamic build) and/or link
+# native espeak-ng. Instead we run the onnx-community/Kokoro-82M-v1.0-ONNX model
+# directly and phonemize by invoking the espeak-ng *binary* (no native link). See
+# src/kokoro.rs.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = [
+    "load-dynamic",
+], optional = true }
+
+[features]
+# Enable the native Kokoro-82M TTS provider. Off by default: it needs onnxruntime
+# (load-dynamic, like silero), the espeak-ng binary on PATH (or EXOQUILL_ESPEAK),
+# and the Kokoro ONNX model + voices fetched separately (models.json `tts-kokoro`).
+# See src/kokoro.rs.
+kokoro = ["dep:ort"]

@@ -40,3 +40,8 @@ reqwest = { version = "0.13", default-features = false, features = [
 # Neural VAD for dictation (Silero ONNX). Off by default: needs onnxruntime + the
 # model fetched separately (scripts/fetch-silero.ps1). Forwards to exoquill-audio.
 silero = ["exoquill-audio/silero"]
+# Native Kokoro-82M TTS (ONNX Runtime). Off by default: needs onnxruntime
+# (load-dynamic), the espeak-ng binary, and the Kokoro model + voices fetched
+# separately (model manager `tts-kokoro`). Forwards to exoquill-ai. Shares the
+# same exact `ort` version as `silero`, so both can be enabled together.
+kokoro = ["exoquill-ai/kokoro"]

@@ -100,12 +100,9 @@ fn tts_for(state: &AppState, provider: Option<&str>) -> Option<Arc<dyn TextToSpe
             .ok()
             .and_then(|slot| slot.as_ref().and_then(|server| server.client()))
             .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
-        Some("kokoro") => state
-            .kokoro_server
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().and_then(|server| server.client()))
-            .map(|client| Arc::new(client) as Arc<dyn TextToSpeechProvider>),
+        // Kokoro is a native provider (no sidecar): route straight to it.
+        #[cfg(feature = "kokoro")]
+        Some("kokoro") => state.kokoro.clone(),
         Some("xtts") => {
             state.xtts_paths.as_ref()?;
             state
@@ -488,32 +485,8 @@ fn warm_backend(state: &AppState, app: &AppHandle, provider: &str) {
                 }
             });
         }
-        "kokoro" => {
-            let Some((python, script)) = state.kokoro_paths.clone() else {
-                return;
-            };
-            if state
-                .kokoro_server
-                .lock()
-                .map(|s| s.is_some())
-                .unwrap_or(false)
-            {
-                return;
-            }
-            if state.kokoro_warming.swap(true, Ordering::SeqCst) {
-                return;
-            }
-            let handle = app.clone();
-            std::thread::spawn(move || {
-                let server = exoquill_ai::KokoroServer::start(python, script).ok();
-                if let Some(state) = handle.try_state::<AppState>() {
-                    if let (Some(server), Ok(mut slot)) = (server, state.kokoro_server.lock()) {
-                        *slot = Some(server);
-                    }
-                    state.kokoro_warming.store(false, Ordering::SeqCst);
-                }
-            });
-        }
+        // Kokoro is native (no sidecar) — nothing to warm up; it's ready as soon
+        // as the provider is built at setup. Handled in the `_` arm.
         _ => {}
     }
 }
@@ -551,25 +524,19 @@ pub fn ensure_tts_ready(
             .lock()
             .map(|s| s.is_some())
             .unwrap_or(false),
-        "kokoro" => st
-            .kokoro_server
-            .lock()
-            .map(|s| s.is_some())
-            .unwrap_or(false),
-        _ => true, // Piper / unknown → ready (synthesis falls back to Piper).
+        // Piper / Kokoro (native, no warm-up) / unknown → ready at once.
+        _ => true,
     };
     let warming = || match provider.as_str() {
         "xtts" => st.xtts_warming.load(Ordering::SeqCst),
         "zonos" => st.zonos_warming.load(Ordering::SeqCst),
         "chatterbox" => st.chatterbox_warming.load(Ordering::SeqCst),
-        "kokoro" => st.kokoro_warming.load(Ordering::SeqCst),
         _ => false,
     };
     let configured = match provider.as_str() {
         "xtts" => st.xtts_paths.is_some(),
         "zonos" => st.zonos_paths.is_some(),
         "chatterbox" => st.chatterbox_paths.is_some(),
-        "kokoro" => st.kokoro_paths.is_some(),
         _ => true,
     };
 
@@ -803,8 +770,10 @@ pub fn list_tts_voices(state: State<AppState>) -> Vec<TtsVoice> {
     if let Some((_, _, voices_dir)) = &state.chatterbox_paths {
         voices.extend(exoquill_ai::ChatterboxTts::voices_in_dir(voices_dir));
     }
-    if state.kokoro_paths.is_some() {
-        voices.extend(exoquill_ai::KokoroTts::voices_static());
+    // Native Kokoro: list its loaded voices directly (no sidecar to query).
+    #[cfg(feature = "kokoro")]
+    if let Some(kokoro) = state.kokoro.as_ref() {
+        voices.extend(kokoro.voices());
     }
     voices
 }

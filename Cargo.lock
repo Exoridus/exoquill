@@ -1209,6 +1209,7 @@ version = "0.2.0"
 dependencies = [
  "exoquill-capture",
  "exoquill-core",
+ "ort",
  "reqwest",
  "serde",
  "serde_json",
@@ -3650,7 +3651,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3984,7 +3985,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

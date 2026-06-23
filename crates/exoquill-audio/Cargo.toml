@@ -12,8 +12,11 @@ cpal = "0.18.1"
 # Neural VAD (Silero) runtime — optional, pulled in only by the `silero` feature
 # so the default build never compiles ONNX Runtime. `load-dynamic` links
 # onnxruntime at runtime (dlopen); the dictation worker falls back to the energy
-# gate when the runtime or model is absent. Pinned to rc.10: rc.12's source
-# references a VitisAI ort-sys binding that isn't generated, so it won't build.
+# gate when the runtime or model is absent. Pinned to rc.10 (must stay in lockstep
+# with exoquill-ai's native Kokoro TTS, which uses the same ort): rc.11 moves
+# `TensorElementType` out from under what kokoro-en imports, and rc.12's `vitis.rs`
+# references an `ort-sys` VitisAI binding that isn't generated under `load-dynamic`,
+# so neither builds. See the Kokoro provider in crates/exoquill-ai/src/kokoro.rs.
 ort = { version = "=2.0.0-rc.10", default-features = false, features = [
     "load-dynamic",
 ], optional = true }

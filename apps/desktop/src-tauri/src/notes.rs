@@ -74,15 +74,13 @@ pub struct AppState {
     pub chatterbox_server: Mutex<Option<exoquill_ai::ChatterboxServer>>,
     /// Guards against starting two Chatterbox sidecars concurrently (see above).
     pub chatterbox_warming: std::sync::atomic::AtomicBool,
-    /// `(python, kokoro-server.py)` to spawn the Kokoro-82M sidecar, or `None`
-    /// when not configured. Kokoro has a fixed built-in voice set — no reference
-    /// `.wav` clips needed. Apache-2.0 weights, runs on CPU.
-    pub kokoro_paths: Option<(PathBuf, PathBuf)>,
-    /// The Kokoro sidecar, warmed up on demand (when the UI selects Kokoro) and
-    /// kept alive. Dropping it kills the Python process.
-    pub kokoro_server: Mutex<Option<exoquill_ai::KokoroServer>>,
-    /// Guards against starting two Kokoro sidecars concurrently (see above).
-    pub kokoro_warming: std::sync::atomic::AtomicBool,
+    /// The native Kokoro-82M TTS provider (ONNX Runtime, no sidecar), built once
+    /// at setup when the model + voices + espeak-ng are present, else `None`.
+    /// Apache-2.0 weights, English, fixed built-in voice set. Only present when
+    /// the app is built with the `kokoro` feature; like the Piper `tts` field, it
+    /// needs no warm-up — synthesis runs directly on it.
+    #[cfg(feature = "kokoro")]
+    pub kokoro: Option<Arc<dyn TextToSpeechProvider>>,
     /// Cancellation for the in-progress read-aloud speech-prep pass. `begin_read`
     /// installs a fresh token, `cancel_read` trips it, and each `prepare_speech`
     /// chunk runs under it so a cancel stops the streaming llama generation
