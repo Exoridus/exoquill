@@ -65,6 +65,24 @@ pub struct AppState {
     pub zonos_server: Mutex<Option<exoquill_ai::ZonosServer>>,
     /// Guards against starting two Zonos sidecars concurrently (see above).
     pub zonos_warming: std::sync::atomic::AtomicBool,
+    /// `(python, chatterbox-server.py, voices_dir)` to spawn the Chatterbox sidecar, or
+    /// `None` when not configured. `voices_dir` holds the reference `.wav` clips
+    /// (one per voice). MIT-licensed weights, but needs a CUDA GPU.
+    pub chatterbox_paths: Option<(PathBuf, PathBuf, PathBuf)>,
+    /// The Chatterbox sidecar, warmed up on demand (when the UI selects Chatterbox) and
+    /// kept alive. Dropping it kills the Python process.
+    pub chatterbox_server: Mutex<Option<exoquill_ai::ChatterboxServer>>,
+    /// Guards against starting two Chatterbox sidecars concurrently (see above).
+    pub chatterbox_warming: std::sync::atomic::AtomicBool,
+    /// `(python, kokoro-server.py)` to spawn the Kokoro-82M sidecar, or `None`
+    /// when not configured. Kokoro has a fixed built-in voice set — no reference
+    /// `.wav` clips needed. Apache-2.0 weights, runs on CPU.
+    pub kokoro_paths: Option<(PathBuf, PathBuf)>,
+    /// The Kokoro sidecar, warmed up on demand (when the UI selects Kokoro) and
+    /// kept alive. Dropping it kills the Python process.
+    pub kokoro_server: Mutex<Option<exoquill_ai::KokoroServer>>,
+    /// Guards against starting two Kokoro sidecars concurrently (see above).
+    pub kokoro_warming: std::sync::atomic::AtomicBool,
     /// Cancellation for the in-progress read-aloud speech-prep pass. `begin_read`
     /// installs a fresh token, `cancel_read` trips it, and each `prepare_speech`
     /// chunk runs under it so a cancel stops the streaming llama generation
@@ -251,6 +269,59 @@ pub fn export_note(
     };
     let path = path.into_path().map_err(|e| e.to_string())?;
     std::fs::write(&path, note.content_markdown.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Import a Markdown/text file the user picks (native open dialog) as a new note.
+/// Returns the created note, or `None` if the user cancelled the dialog. Notes
+/// are stored as Markdown, so the file content is taken verbatim.
+#[tauri::command(async)]
+pub fn import_note(state: State<AppState>, app: AppHandle) -> CommandResult<Option<Note>> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("Markdown / Text", &["md", "markdown", "txt"])
+        .blocking_pick_file()
+    else {
+        return Ok(None); // user cancelled
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let note = db
+        .create_note(NewNote {
+            title: None,
+            content_markdown: content,
+            source: NoteSource::default(),
+            language_mode: None,
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(Some(note))
+}
+
+/// Export arbitrary content (e.g. the current selection) to a file the user picks
+/// (native save dialog). Returns the saved path, or `None` if cancelled. Unlike
+/// `export_note` this writes the passed `content` directly, so it works for a
+/// selection or any derived text.
+#[tauri::command(async)]
+pub fn export_markdown(
+    app: AppHandle,
+    content: String,
+    suggested_name: String,
+) -> CommandResult<Option<String>> {
+    let suggested = format!("{}.md", sanitize_filename(&suggested_name));
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md"])
+        .add_filter("Text", &["txt"])
+        .set_file_name(&suggested)
+        .blocking_save_file()
+    else {
+        return Ok(None); // user cancelled
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 

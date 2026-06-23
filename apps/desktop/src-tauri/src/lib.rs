@@ -269,6 +269,36 @@ fn resolve_zonos_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
     (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
 }
 
+/// Python + `chatterbox-server.py` + a reference-voice folder, from
+/// `EXOQUILL_CHATTERBOX_PYTHON` / `EXOQUILL_CHATTERBOX_SCRIPT` / `EXOQUILL_CHATTERBOX_VOICES`
+/// (set by dev.ps1). `None` when not configured. Chatterbox weights are MIT-licensed,
+/// but it needs a CUDA GPU, so it's opt-in via the env vars.
+fn resolve_chatterbox_paths(_app: &App) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let python = std::env::var("EXOQUILL_CHATTERBOX_PYTHON")
+        .map(PathBuf::from)
+        .ok()?;
+    let script = std::env::var("EXOQUILL_CHATTERBOX_SCRIPT")
+        .map(PathBuf::from)
+        .ok()?;
+    let voices = std::env::var("EXOQUILL_CHATTERBOX_VOICES")
+        .map(PathBuf::from)
+        .ok()?;
+    (python.exists() && script.exists() && voices.exists()).then_some((python, script, voices))
+}
+
+/// Python + `kokoro-server.py`, from `EXOQUILL_KOKORO_PYTHON` / `EXOQUILL_KOKORO_SCRIPT`
+/// (set by dev.ps1). `None` when not configured. Kokoro-82M is Apache-2.0 and
+/// runs on CPU, so it's opt-in via env vars but doesn't need a GPU.
+fn resolve_kokoro_paths(_app: &App) -> Option<(PathBuf, PathBuf)> {
+    let python = std::env::var("EXOQUILL_KOKORO_PYTHON")
+        .map(PathBuf::from)
+        .ok()?;
+    let script = std::env::var("EXOQUILL_KOKORO_SCRIPT")
+        .map(PathBuf::from)
+        .ok()?;
+    (python.exists() && script.exists()).then_some((python, script))
+}
+
 /// Open the region-OCR selection overlay: freeze the monitor under the cursor,
 /// stash the screenshot in state, and show a borderless, always-on-top window
 /// covering that monitor where the user drags a rectangle (snipping-tool style).
@@ -355,6 +385,8 @@ pub fn run() {
             let tts = resolve_tts_provider(app);
             let xtts_paths = resolve_xtts_paths(app);
             let zonos_paths = resolve_zonos_paths(app);
+            let chatterbox_paths = resolve_chatterbox_paths(app);
+            let kokoro_paths = resolve_kokoro_paths(app);
             app.manage(AppState {
                 db: Arc::new(Mutex::new(db)),
                 jobs,
@@ -372,6 +404,12 @@ pub fn run() {
                 zonos_paths,
                 zonos_server: Mutex::new(None),
                 zonos_warming: std::sync::atomic::AtomicBool::new(false),
+                chatterbox_paths,
+                chatterbox_server: Mutex::new(None),
+                chatterbox_warming: std::sync::atomic::AtomicBool::new(false),
+                kokoro_paths,
+                kokoro_server: Mutex::new(None),
+                kokoro_warming: std::sync::atomic::AtomicBool::new(false),
                 read_cancel: Mutex::new(exoquill_core::CancelToken::new()),
                 dictation: Mutex::new(None),
                 region_capture: Mutex::new(None),
@@ -410,6 +448,8 @@ pub fn run() {
             notes::list_note_history,
             notes::restore_note_version,
             notes::export_note,
+            notes::import_note,
+            notes::export_markdown,
             jobs::format_note,
             jobs::cancel_job,
             jobs::list_jobs,
@@ -452,6 +492,12 @@ pub fn run() {
                         let _ = server.take();
                     }
                     if let Ok(mut server) = state.zonos_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.chatterbox_server.lock() {
+                        let _ = server.take();
+                    }
+                    if let Ok(mut server) = state.kokoro_server.lock() {
                         let _ = server.take();
                     }
                 }

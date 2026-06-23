@@ -71,6 +71,32 @@
       "setup": "scripts/setup-zonos.ps1",
       "notes": "Apache-2.0 (kommerziell ok, anders als XTTS). Wird nicht gebündelt; lokal per Setup-Skript installiert. Benötigt eine CUDA-GPU. Stimmen via Voice-Cloning aus eigenen Referenz-WAVs (zonos-voices/).",
       "files": []
+    },
+    {
+      "id": "tts-chatterbox",
+      "provider": "chatterbox",
+      "kind": "runtime",
+      "displayName": "Chatterbox Multilingual (v3)",
+      "language": "multi",
+      "license": "MIT",
+      "commercialOk": true,
+      "tier": "download",
+      "setup": "scripts/setup-chatterbox.ps1",
+      "notes": "MIT-Lizenz (kommerziell ok), 23+ Sprachen inkl. Deutsch, Voice-Cloning aus Referenz-WAVs (chatterbox-voices/). Benötigt eine CUDA-GPU. Bettet ein Resemble-„Perth\"-Wasserzeichen in jede Ausgabe ein.",
+      "files": []
+    },
+    {
+      "id": "tts-kokoro",
+      "provider": "kokoro",
+      "kind": "runtime",
+      "displayName": "Kokoro-82M",
+      "language": "multi",
+      "license": "Apache-2.0",
+      "commercialOk": true,
+      "tier": "download",
+      "setup": "scripts/setup-kokoro.ps1",
+      "notes": "Apache-2.0, sehr klein (82M) und schnell, läuft auch auf der CPU. Offizielles Deutsch fehlt (nur Community-Stimme) — primär Englisch.",
+      "files": []
     }
   ]
 }

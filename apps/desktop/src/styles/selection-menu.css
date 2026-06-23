@@ -1,0 +1,35 @@
+.selection-menu {
+  position: fixed;
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--toolbar-bg);
+  color: var(--toolbar-text);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--font-sans);
+}
+
+.selection-menu__btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-menu__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.selection-menu__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 1px;
+  background: var(--toolbar-divider);
+}

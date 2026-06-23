@@ -2,6 +2,7 @@ import { type Editor as TiptapEditor } from "@tiptap/react";
 import { listen } from "@tauri-apps/api/event";
 import {
   type ChangeEvent,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
@@ -11,6 +12,7 @@ import {
 } from "react";
 
 import { ActionBar } from "./components/ActionBar";
+import { ActivityBar } from "./components/ActivityBar";
 import {
   Editor,
   editorMarkdown,
@@ -21,9 +23,12 @@ import {
   separatorBefore,
 } from "./components/Editor";
 import { HistoryOverlay } from "./components/HistoryOverlay";
-import { ModelManager } from "./components/ModelManager";
 import { OcrOverlay } from "./components/OcrOverlay";
-import { ReadAloudSettings, TTS_DEFAULTS } from "./components/ReadAloudSettings";
+import { TTS_DEFAULTS } from "./components/ReadAloudSettings";
+import { SettingsWindow, type SettingsTab } from "./components/SettingsWindow";
+import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
+import { ShortcutsOverlay, type ShortcutGroup } from "./components/ShortcutsOverlay";
+import { SelectionMenu, type SelectionAction } from "./components/SelectionMenu";
 import { ArchiveIcon, PlusIcon, RestoreIcon, TrashIcon } from "./components/icons";
 import { Sidebar } from "./components/Sidebar";
 import { Statusbar } from "./components/Statusbar";
@@ -42,6 +47,8 @@ import type {
   BackendEvent,
   CaptureSource,
   CatalogItem,
+  DictationOpts,
+  EditorPrefs,
   ModelInfo,
   ModelProgress,
   Note,
@@ -56,6 +63,7 @@ import type {
   TtsVoice,
 } from "./lib/types";
 import "./styles/app.css";
+import "./styles/settings.css";
 
 /** Sort a note list to match the backend ordering: pinned first, then by the
  *  chosen key (so optimistic local updates keep the same order as a reload). */
@@ -80,7 +88,7 @@ const backendLabel = (provider: string) => BACKEND_LABELS[provider] ?? provider;
 
 export default function App() {
   const { t, lang, setLang } = useI18n();
-  const [theme, toggleTheme] = useTheme();
+  const { mode: themeMode, theme, setMode: setThemeMode, toggle: toggleTheme } = useTheme();
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -121,7 +129,36 @@ export default function App() {
       return { ...TTS_DEFAULTS };
     }
   });
-  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  // Persisted dictation capture options + the global dictation language default.
+  const [dictationOpts, setDictationOpts] = useState<DictationOpts>(() => {
+    try {
+      return {
+        autoGain: true,
+        gain: 1,
+        useSilero: true,
+        ...JSON.parse(localStorage.getItem("exoquill-dictation-opts") ?? "{}"),
+      };
+    } catch {
+      return { autoGain: true, gain: 1, useSilero: true };
+    }
+  });
+  const [dictationLanguage, setDictationLanguage] = useState<string>(
+    () => localStorage.getItem("exoquill-dictation-lang") ?? "auto",
+  );
+  // Persisted editor display prefs (font scale + content width), applied as CSS vars.
+  const [editorPrefs, setEditorPrefs] = useState<EditorPrefs>(() => {
+    try {
+      return {
+        fontScale: 1,
+        contentWidth: 720,
+        ...JSON.parse(localStorage.getItem("exoquill-editor-prefs") ?? "{}"),
+      };
+    } catch {
+      return { fontScale: 1, contentWidth: 720 };
+    }
+  });
+  // The app version, shown in the settings About tab.
+  const [appVersion, setAppVersion] = useState("");
   // Chunked-format progress (null = idle), and whether to run an LLM "prepare for
   // speech" pass before read-aloud (persisted).
   const [formatProgress, setFormatProgress] = useState<{ done: number; total: number } | null>(
@@ -146,7 +183,10 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   // The model manager window: open flag, catalog, live download progress, and
   // the entry currently installing.
-  const [showModels, setShowModels] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  // Command palette (Ctrl+K) and the keyboard-shortcuts cheat sheet ("?").
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [modelProgress, setModelProgress] = useState<Record<string, ModelProgress>>({});
   const [modelBusy, setModelBusy] = useState<string | null>(null);
@@ -159,6 +199,8 @@ export default function App() {
   // Bumped when a note's content changes out-of-band (format/OCR job) to
   // remount the editor so it picks up the new Markdown.
   const [reloadKey, setReloadKey] = useState(0);
+  // The live TipTap editor instance (drives the floating selection toolbar).
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null);
 
   const editorRef = useRef<TiptapEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -335,6 +377,7 @@ export default function App() {
 
   const handleEditorReady = useCallback((editor: TiptapEditor) => {
     editorRef.current = editor;
+    setEditorInstance(editor);
   }, []);
 
   const newNote = useCallback(async () => {
@@ -818,14 +861,15 @@ export default function App() {
           dictationMode.current = "cursor";
           if (editor && activeId) editor.chain().focus("end").scrollIntoView().run();
         }
-        let language = activeNote?.languageMode;
+        // The settings dictation language overrides the note's, unless "auto".
+        let language = dictationLanguage !== "auto" ? dictationLanguage : activeNote?.languageMode;
         if (!activeId) {
           const note = await api.createNote("", "dictation");
           setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)], sortRef.current));
           setActiveId(note.id);
-          language = note.languageMode;
+          if (dictationLanguage === "auto") language = note.languageMode;
         }
-        await startDictation(source?.name, language, source?.loopback ?? false);
+        await startDictation(source?.name, language, source?.loopback ?? false, dictationOpts);
       }
     } catch (err) {
       setDictationError(String(err));
@@ -833,11 +877,19 @@ export default function App() {
     } finally {
       dictationBusy.current = false;
     }
-  }, [dictating, activeId, activeNote, source]);
+  }, [dictating, activeId, activeNote, source, dictationLanguage, dictationOpts]);
 
   // Load the available dictation sources (mics + loopback) once.
   useEffect(() => {
     void api.listCaptureSources().then(setSources).catch(() => setSources([]));
+  }, []);
+
+  // Load the app version once (for the settings About tab).
+  useEffect(() => {
+    void api
+      .appVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(""));
   }, []);
 
   // Load the read-aloud voices once; if nothing is stored (or the stored voice
@@ -866,6 +918,17 @@ export default function App() {
     localStorage.setItem("tts-tuning", JSON.stringify(tuning));
   }, [tuning]);
 
+  // Persist dictation + editor preferences (set from the settings window).
+  useEffect(() => {
+    localStorage.setItem("exoquill-dictation-opts", JSON.stringify(dictationOpts));
+  }, [dictationOpts]);
+  useEffect(() => {
+    localStorage.setItem("exoquill-dictation-lang", dictationLanguage);
+  }, [dictationLanguage]);
+  useEffect(() => {
+    localStorage.setItem("exoquill-editor-prefs", JSON.stringify(editorPrefs));
+  }, [editorPrefs]);
+
   // Live model-download progress for the manager.
   useEffect(() => {
     const unlisten = listen<ModelProgress>("model_progress", (e) => {
@@ -874,9 +937,10 @@ export default function App() {
     return () => void unlisten.then((f) => f());
   }, []);
 
-  // Open the model manager: load the catalog + active-provider summaries.
-  const openModels = useCallback(() => {
-    setShowModels(true);
+  // Open the settings window on a given tab; load the catalog + provider
+  // summaries so the Models and About tabs are populated.
+  const openSettings = useCallback((tab: SettingsTab) => {
+    setSettingsTab(tab);
     void api.listCatalog().then(setCatalog).catch(() => setCatalog([]));
     void api.listModelInfo().then(setModels).catch(() => setModels([]));
   }, []);
@@ -1109,6 +1173,117 @@ export default function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, [openOcr]);
 
+  // Import a Markdown/text file as a new note (native open dialog).
+  const runImport = useCallback(async () => {
+    const note = await api.importNote();
+    if (!note) return;
+    setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)], sortRef.current));
+    setActiveId(note.id);
+  }, []);
+
+  // Export the current selection to a user-picked file.
+  const exportSelection = useCallback(
+    (text: string) => {
+      const name = (activeNote?.title ?? "").trim() || t("selection.exportName");
+      void api.exportMarkdown(text, name);
+    },
+    [activeNote, t],
+  );
+
+  // Create a new note from the current selection and open it.
+  const newNoteFromSelection = useCallback(async (text: string) => {
+    const note = await api.createNote(text);
+    setNotes((prev) => sortNotes([note, ...prev.filter((n) => n.id !== note.id)], sortRef.current));
+    setActiveId(note.id);
+  }, []);
+
+  // Global keyboard shortcuts: Ctrl/Cmd+K palette, Ctrl/Cmd+N new note,
+  // Ctrl/Cmd+O import, Ctrl/Cmd+, settings, "?" the cheat sheet (not while typing).
+  useEffect(() => {
+    const isTyping = (el: EventTarget | null) => {
+      const node = el as HTMLElement | null;
+      return (
+        !!node &&
+        (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.isContentEditable)
+      );
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      } else if (mod && e.key === ",") {
+        e.preventDefault();
+        openSettings("models");
+      } else if (mod && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        void newNote();
+      } else if (mod && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        void runImport();
+      } else if (e.key === "?" && !isTyping(e.target)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openSettings, newNote, runImport]);
+
+  // The command-palette entries (Ctrl+K), wired to the existing handlers.
+  const paletteCommands: PaletteCommand[] = useMemo(
+    () => [
+      { id: "new", group: t("palette.group.actions"), label: t("sidebar.newNote"), shortcut: "Ctrl + N", run: () => void newNote() },
+      { id: "import", group: t("palette.group.actions"), label: t("palette.cmd.import"), shortcut: "Ctrl + O", run: () => void runImport() },
+      { id: "dictate", group: t("palette.group.actions"), label: t("action.dictate"), run: () => void toggleDictation() },
+      { id: "ocr", group: t("palette.group.actions"), label: t("action.ocr"), run: triggerOcr },
+      { id: "format", group: t("palette.group.actions"), label: t("action.format"), disabled: !activeNote, run: () => void formatActive() },
+      { id: "read", group: t("palette.group.actions"), label: t("action.read"), disabled: !activeNote, run: () => void readActive() },
+      {
+        id: "export",
+        group: t("palette.group.actions"),
+        label: t("action.export"),
+        disabled: !activeNote,
+        run: () => {
+          if (activeId) void flushSave().then(() => api.exportNote(activeId));
+        },
+      },
+      { id: "history", group: t("palette.group.actions"), label: t("action.history"), disabled: !activeNote, run: () => openHistory() },
+      { id: "settings", group: t("palette.group.view"), label: t("palette.cmd.settings"), shortcut: "Ctrl + ,", run: () => openSettings("models") },
+      { id: "theme", group: t("palette.group.view"), label: t("palette.cmd.theme"), run: () => toggleTheme() },
+      { id: "lang", group: t("palette.group.view"), label: t("palette.cmd.lang"), run: () => setLang(lang === "de" ? "en" : "de") },
+      { id: "shortcuts", group: t("palette.group.view"), label: t("palette.cmd.shortcuts"), shortcut: "?", run: () => setShortcutsOpen(true) },
+    ],
+    [t, activeNote, activeId, newNote, runImport, toggleDictation, triggerOcr, formatActive, readActive, openHistory, openSettings, toggleTheme, setLang, lang, flushSave],
+  );
+
+  const shortcutGroups: ShortcutGroup[] = useMemo(
+    () => [
+      {
+        title: t("shortcuts.group.general"),
+        items: [
+          { keys: "Ctrl + K", label: t("palette.cmd.palette") },
+          { keys: "Ctrl + N", label: t("shortcuts.newNote") },
+          { keys: "Ctrl + O", label: t("palette.cmd.import") },
+          { keys: "Ctrl + ,", label: t("palette.cmd.settings") },
+          { keys: "?", label: t("palette.cmd.shortcuts") },
+        ],
+      },
+    ],
+    [t],
+  );
+
+  // The floating selection-toolbar actions (format/read/export/new note).
+  const selectionActions: SelectionAction[] = useMemo(
+    () => [
+      { id: "format", label: t("action.format"), title: t("action.format.title"), run: () => void formatActive() },
+      { id: "read", label: t("action.read"), title: t("action.read.title"), run: () => void readActive() },
+      { id: "export", label: t("action.export"), title: t("action.export.title"), run: (text) => exportSelection(text) },
+      { id: "newNote", label: t("selection.newNote"), run: (text) => void newNoteFromSelection(text) },
+    ],
+    [t, formatActive, readActive, exportSelection, newNoteFromSelection],
+  );
+
   return (
     <div className="app">
       <input
@@ -1161,7 +1336,7 @@ export default function App() {
             hasNote={!!activeNote}
             theme={theme}
             onToggleTheme={toggleTheme}
-            onShowModels={openModels}
+            onShowModels={() => openSettings("models")}
             lang={lang}
             onToggleLang={() => setLang(lang === "de" ? "en" : "de")}
           />
@@ -1263,7 +1438,7 @@ export default function App() {
                       )}
                       <button
                         className="icon-btn"
-                        onClick={() => setShowVoiceSettings(true)}
+                        onClick={() => openSettings("readaloud")}
                         aria-label={t("readaloud.settings.aria")}
                         title={t("readaloud.settings.aria")}
                       >
@@ -1272,34 +1447,19 @@ export default function App() {
                     </div>
                   );
                 })()}
-              {dictating && (
-                <div className="dictation-bar" role="status" aria-live="polite">
-                  <span className="dictation-bar__dot" />
-                  <span className="dictation-bar__label">{t("dictation.recording")}</span>
-                  <span className="dictation-bar__meter">
-                    <span
-                      className="dictation-bar__level"
-                      style={{ width: `${Math.round(Math.min(1, micLevel) * 100)}%` }}
-                    />
-                  </span>
-                </div>
-              )}
+              {dictating && <ActivityBar label={t("dictation.recording")} meter={micLevel} />}
               {formatProgress && !reading && (
-                <div className="dictation-bar" role="status" aria-live="polite">
-                  <span className="dictation-bar__dot" />
-                  <span className="dictation-bar__label">
-                    {t("format.progress", {
-                      done: formatProgress.done,
-                      total: formatProgress.total,
-                    })}
-                  </span>
-                </div>
+                <ActivityBar
+                  label={t("format.progress", {
+                    done: formatProgress.done,
+                    total: formatProgress.total,
+                  })}
+                />
               )}
               {reading && !speaking && (
-                <div className="dictation-bar" role="status" aria-live="polite">
-                  <span className="dictation-bar__dot" />
-                  <span className="dictation-bar__label">
-                    {synthProgress
+                <ActivityBar
+                  label={
+                    synthProgress
                       ? t("readaloud.prepAudio", {
                           done: synthProgress.done,
                           total: synthProgress.total,
@@ -1309,40 +1469,43 @@ export default function App() {
                             done: formatProgress.done,
                             total: formatProgress.total,
                           })
-                        : t("readaloud.preparing")}
-                  </span>
-                  <button className="tts-reset" onClick={() => void readActive()}>
-                    {t("readaloud.cancel")}
-                  </button>
-                </div>
+                        : t("readaloud.preparing")
+                  }
+                  actions={[{ label: t("readaloud.cancel"), onClick: () => void readActive() }]}
+                />
               )}
               {reading && speaking && (
-                <div className="dictation-bar" role="status" aria-live="polite">
-                  <span className="dictation-bar__dot" />
-                  <span className="dictation-bar__label">
-                    {paused ? t("readaloud.paused") : t("readaloud.reading")}
-                    {formatProgress
-                      ? t("readaloud.prepSuffix", {
-                          done: formatProgress.done,
-                          total: formatProgress.total,
-                        })
-                      : ""}
-                  </span>
-                  <button className="tts-reset" onClick={togglePauseRead}>
-                    {paused ? t("readaloud.resume") : t("readaloud.pause")}
-                  </button>
-                  <button className="tts-reset" onClick={() => void readActive()}>
-                    {t("readaloud.stop")}
-                  </button>
-                </div>
+                <ActivityBar
+                  label={
+                    <>
+                      {paused ? t("readaloud.paused") : t("readaloud.reading")}
+                      {formatProgress
+                        ? t("readaloud.prepSuffix", {
+                            done: formatProgress.done,
+                            total: formatProgress.total,
+                          })
+                        : ""}
+                    </>
+                  }
+                  actions={[
+                    {
+                      label: paused ? t("readaloud.resume") : t("readaloud.pause"),
+                      onClick: togglePauseRead,
+                    },
+                    { label: t("readaloud.stop"), onClick: () => void readActive() },
+                  ]}
+                />
               )}
-              {voiceLoading && !reading && (
-                <div className="dictation-bar" role="status" aria-live="polite">
-                  <span className="dictation-bar__dot" />
-                  <span className="dictation-bar__label">{t("readaloud.voiceLoading")}</span>
-                </div>
-              )}
-              <div className="editor-scroll">
+              {voiceLoading && !reading && <ActivityBar label={t("readaloud.voiceLoading")} />}
+              <div
+                className="editor-scroll"
+                style={
+                  {
+                    "--editor-font-scale": editorPrefs.fontScale,
+                    "--editor-content-width": `${editorPrefs.contentWidth}px`,
+                  } as CSSProperties
+                }
+              >
                 <input
                   ref={titleInputRef}
                   className="editor-title"
@@ -1358,6 +1521,7 @@ export default function App() {
                   onReady={handleEditorReady}
                 />
               </div>
+              <SelectionMenu editor={editorInstance} actions={selectionActions} />
               <Statusbar note={activeNote} saved={saved} />
             </>
           ) : (
@@ -1371,6 +1535,13 @@ export default function App() {
               >
                 <PlusIcon size={14} />
                 {t("sidebar.newNote")}
+              </button>
+              <button
+                className="action-btn"
+                style={{ width: "auto" }}
+                onClick={() => void runImport()}
+              >
+                {t("palette.cmd.import")}
               </button>
             </div>
           )}
@@ -1400,27 +1571,24 @@ export default function App() {
           onClose={() => setHistory(null)}
         />
       )}
-      {showModels && (
-        <ModelManager
-          items={catalog}
-          providers={models ?? []}
-          progress={modelProgress}
-          busyId={modelBusy}
-          onInstall={handleInstallModel}
-          onDelete={handleDeleteModel}
-          onClose={() => setShowModels(false)}
-        />
-      )}
-      {showVoiceSettings &&
+      {settingsTab &&
         (() => {
           const activeProvider = voices.find((v) => v.id === voiceId)?.provider ?? "piper";
           return (
-            <ReadAloudSettings
+            <SettingsWindow
+              initialTab={settingsTab}
+              onClose={() => setSettingsTab(null)}
+              catalog={catalog}
+              providers={models ?? []}
+              modelProgress={modelProgress}
+              modelBusy={modelBusy}
+              onInstallModel={handleInstallModel}
+              onDeleteModel={handleDeleteModel}
               backendLabel={backendLabel(activeProvider)}
               isPiper={activeProvider === "piper"}
               isZonos={activeProvider === "zonos"}
               tuning={tuning}
-              onChange={setTuning}
+              onTuningChange={setTuning}
               speechPrep={speechPrep}
               onSpeechPrepChange={(v) => {
                 setSpeechPrep(v);
@@ -1428,7 +1596,22 @@ export default function App() {
               }}
               onPreview={() => void previewVoice()}
               previewing={previewing}
-              onClose={() => setShowVoiceSettings(false)}
+              sources={sources}
+              sourceName={source?.name ?? null}
+              onSourceChange={(name) =>
+                setSource(name ? sources.find((s) => s.name === name) ?? null : null)
+              }
+              dictationOpts={dictationOpts}
+              onDictationOptsChange={setDictationOpts}
+              dictationLanguage={dictationLanguage}
+              onDictationLanguageChange={setDictationLanguage}
+              themeMode={themeMode}
+              onThemeModeChange={setThemeMode}
+              lang={lang}
+              onLangChange={setLang}
+              editorPrefs={editorPrefs}
+              onEditorPrefsChange={setEditorPrefs}
+              version={appVersion}
             />
           );
         })()}
@@ -1478,6 +1661,19 @@ export default function App() {
           </div>
         </div>
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={paletteCommands}
+        placeholder={t("palette.placeholder")}
+        emptyLabel={t("palette.empty")}
+      />
+      <ShortcutsOverlay
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        title={t("shortcuts.title")}
+        groups={shortcutGroups}
+      />
       <ToastStack toasts={toasts.toasts} onAction={toasts.runAction} onDismiss={toasts.dismiss} />
     </div>
   );

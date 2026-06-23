@@ -23,6 +23,11 @@ import type {
   TtsVoice,
 } from "./types";
 
+/** The running app version (from Cargo/Tauri), for the settings About tab. */
+export function appVersion(): Promise<string> {
+  return invoke<string>("app_version");
+}
+
 /** List notes in a scope (default "active"), ordered by `sort` (default
  *  "modified"); pinned notes always come first. */
 export function listNotes(scope: NoteScope = "active", sort: NoteSort = "modified"): Promise<Note[]> {
@@ -98,6 +103,17 @@ export function restoreNoteVersion(noteId: string, versionId: string): Promise<N
 
 /** Export a note's Markdown via a native save dialog. Resolves to the saved
  *  path, or `null` if the user cancelled. */
+/** Import a Markdown/text file the user picks → a new note (native open dialog).
+ *  Resolves to the created note, or null if the user cancelled. */
+export function importNote(): Promise<Note | null> {
+  return invoke<Note | null>("import_note");
+}
+
+/** Export arbitrary content (e.g. the current selection) to a user-picked file. */
+export function exportMarkdown(content: string, suggestedName: string): Promise<string | null> {
+  return invoke<string | null>("export_markdown", { content, suggestedName });
+}
+
 export function exportNote(id: string): Promise<string | null> {
   return invoke<string | null>("export_note", { id });
 }

@@ -2,7 +2,7 @@
 // a pinned group, sort, per-note hover + context-menu actions, multi-select with
 // a bulk action bar, and the archive/trash views with restore / delete-forever.
 
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../lib/i18n";
 import { relativeTime, daysUntilPurge } from "../lib/datetime";
@@ -62,6 +62,28 @@ function preview(note: Note, emptyLabel: string): string {
     .split("\n")
     .map((line) => line.replace(/^#+\s*/, "").replace(/[*`_>]/g, "").trim());
   return lines.slice(1).find(Boolean) ?? lines.find(Boolean) ?? emptyLabel;
+}
+
+/** Wrap case-insensitive matches of `query` in <mark> for search highlighting. */
+function highlight(text: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const out: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  for (let found = lower.indexOf(ql); found !== -1; found = lower.indexOf(ql, i)) {
+    if (found > i) out.push(text.slice(i, found));
+    out.push(
+      <mark key={key++} className="note-hl">
+        {text.slice(found, found + q.length)}
+      </mark>,
+    );
+    i = found + q.length;
+  }
+  if (i < text.length) out.push(text.slice(i));
+  return out.length ? out : text;
 }
 
 export function Sidebar(props: Props) {
@@ -226,6 +248,7 @@ export function Sidebar(props: Props) {
                         selected={selected.has(note.id)}
                         selectionMode={selectionMode}
                         emptyLabel={emptyLabel}
+                        query={query}
                         onClick={(e) => onSelect(note.id, e)}
                         onPin={() => props.onPin(note)}
                         onMenu={(e) => openMenu(note, e)}
@@ -244,6 +267,7 @@ export function Sidebar(props: Props) {
                     selected={selected.has(note.id)}
                     selectionMode={selectionMode}
                     emptyLabel={emptyLabel}
+                    query={query}
                     onClick={(e) => onSelect(note.id, e)}
                     onPin={() => props.onPin(note)}
                     onMenu={(e) => openMenu(note, e)}
@@ -286,6 +310,8 @@ interface RowProps {
   selected: boolean;
   selectionMode: boolean;
   emptyLabel: string;
+  /** Current search query, for match highlighting (empty = no search). */
+  query: string;
   onClick: (e: MouseEvent) => void;
   onPin: () => void;
   onMenu: (e: MouseEvent) => void;
@@ -297,6 +323,7 @@ function NoteRow({
   selected,
   selectionMode,
   emptyLabel,
+  query,
   onClick,
   onPin,
   onMenu,
@@ -315,8 +342,8 @@ function NoteRow({
         </span>
       )}
       <div className="note-item__body">
-        <div className="note-item__title">{note.title}</div>
-        <div className="note-item__preview">{preview(note, emptyLabel)}</div>
+        <div className="note-item__title">{highlight(note.title, query)}</div>
+        <div className="note-item__preview">{highlight(preview(note, emptyLabel), query)}</div>
       </div>
       {!selectionMode && (
         <div className="note-item__actions">

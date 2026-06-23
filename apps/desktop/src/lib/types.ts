@@ -208,3 +208,18 @@ export type BackendEvent =
   | { type: "job_progress"; id: string; progress: number }
   | { type: "notes_changed" }
   | { type: "error"; message: string };
+
+/** Dictation capture tuning (persisted UI settings; flow into `startDictation`). */
+export interface DictationOpts {
+  autoGain: boolean;
+  gain: number;
+  useSilero: boolean;
+}
+
+/** Editor display preferences (persisted UI settings; applied as CSS variables). */
+export interface EditorPrefs {
+  /** Multiplier on the editor font size (1.0 = default). */
+  fontScale: number;
+  /** Max content column width in px. */
+  contentWidth: number;
+}

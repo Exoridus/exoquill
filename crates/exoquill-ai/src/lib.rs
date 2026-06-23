@@ -5,7 +5,9 @@
 //! synchronous and cooperatively cancellable so the job queue can execute them
 //! off the UI thread; heavy runtimes run as isolated processes (decisions D8).
 
+pub mod chatterbox;
 pub mod formatter;
+pub mod kokoro;
 pub mod llama;
 pub mod llama_server;
 pub mod mock;
@@ -21,6 +23,8 @@ pub mod whisper_server;
 pub mod xtts;
 pub mod zonos;
 
+pub use chatterbox::{ChatterboxServer, ChatterboxTts};
+pub use kokoro::{KokoroServer, KokoroTts};
 pub use llama::LlamaFormatter;
 pub use llama_server::{LlamaServer, LlamaServerFormatter};
 pub use piper::PiperTts;
